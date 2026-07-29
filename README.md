@@ -1,25 +1,35 @@
 # mdReview
 
-mdReview is a local Linux application for reviewing Markdown in a browser. It gives long plans,
-specifications, and technical documents a calm reading surface without moving them into another
-system.
+mdReview is a local Linux application to review Markdown documents that coding agents make.
 
-Open a project directory, read its Markdown in a three-pane workspace, and leave threaded comments
-on a whole document or an exact text selection. Comments live in adjacent `*.md.review.json`
-sidecars, so they remain ordinary repository files you can inspect, share, or give to a coding agent
-when you choose. mdReview never edits Markdown, invokes a model, or sends comments to an agent
-automatically.
+Use mdReview when an agent makes a plan, a specification, or another Markdown document. Read the
+document in a browser. Add a comment to the document or to selected text.
 
-![The light mdReview interface with files, a typeset document, and review threads](web/tests/visual/m4-1440.visual.spec.ts-snapshots/rich-discussion-light-chromium-1440-linux.png)
+mdReview saves comments in a sidecar file next to the Markdown file:
+
+```text
+plan.md
+plan.md.review.json
+```
+
+You can give the sidecar file to a coding agent after you complete review. The agent can read the
+comments and change the Markdown file. mdReview does not change Markdown files. It does not start an
+agent. It does not send comments to an agent.
+
+mdReview also includes an optional Agent Skill. Install the skill to tell a coding agent where to
+find sidecar comments and how to use them. You choose if and when to install the skill.
+
+![The mdReview interface with files, a Markdown document, and comments](web/tests/visual/m4-1440.visual.spec.ts-snapshots/rich-discussion-light-chromium-1440-linux.png)
 
 The v0.1 release target is Linux `amd64` (`GOAMD64=v1`). The release decision and evidence tied to
 the artifact hashes are published beside the artifacts.
 
-## Why mdReview
+## Use mdReview to
 
-- Read Markdown as a document, rather than as raw source in an editor.
-- Keep review comments next to the file they discuss, not in a hosted service or a database.
-- Hand an agent durable, inspectable feedback only when you decide to do so.
+- Review a Markdown document that a coding agent makes.
+- Add comments to a document or to selected text.
+- Save comments with the Markdown file.
+- Give clear review data to a coding agent.
 
 ## Download and run
 
