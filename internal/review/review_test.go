@@ -251,7 +251,7 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 		}
 	}
 
-	fixture, err := os.ReadFile(filepath.Join("..", "..", "contracts", "m2", "sidecar.json"))
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m2", "sidecar.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 		t.Fatalf("published sidecar threads = %d, want 1", len(document.Threads()))
 	}
 
-	reviewFixture, err := os.ReadFile(filepath.Join("..", "..", "contracts", "m2", "review.json"))
+	reviewFixture, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m2", "review.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +279,7 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 		t.Fatalf("published review response = %+v", snapshot)
 	}
 
-	createFixture, err := os.ReadFile(filepath.Join("..", "..", "contracts", "m2", "create-response.json"))
+	createFixture, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m2", "create-response.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

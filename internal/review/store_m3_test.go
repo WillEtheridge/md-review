@@ -897,7 +897,7 @@ func TestStoreM3SemanticRetriesUseLatestTargetAndUnrelatedData(t *testing.T) {
 }
 
 func TestPublishedM3ContractFixturesDecodeIntoReviewCoreTypes(t *testing.T) {
-	fixtureRoot := filepath.Join("..", "..", "contracts", "m3")
+	fixtureRoot := filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m3")
 	var snapshot Snapshot
 	decodeFixture(t, filepath.Join(fixtureRoot, "review.json"), &snapshot)
 	if snapshot.Path != "README.md" ||

@@ -21,8 +21,7 @@ find sidecar comments and how to use them. You choose if and when to install the
 
 ![The mdReview interface with files, a Markdown document, and comments](web/tests/visual/m4-1440.visual.spec.ts-snapshots/rich-discussion-light-chromium-1440-linux.png)
 
-The v0.1 release target is Linux `amd64` (`GOAMD64=v1`). The release decision and evidence tied to
-the artifact hashes are published beside the artifacts.
+The v0.1 release target is Linux `amd64` (`GOAMD64=v1`).
 
 ## Use mdReview to
 
@@ -55,18 +54,6 @@ mdreview .
 ```
 
 Make sure `$HOME/.local/bin` is on `PATH`.
-
-## Verify a download
-
-For checksum verification, also download `SHA256SUMS` from the same GitHub release. In the directory
-containing both downloads, run:
-
-```bash
-grep '  mdreview-v0.1.0-linux-amd64.tar.gz$' SHA256SUMS | sha256sum --check -
-```
-
-Do not use an archive that does not pass this check. The archive also contains this guide, the
-security policy, the MIT licence, third-party notices, and the artifact SBOM.
 
 ## Update
 

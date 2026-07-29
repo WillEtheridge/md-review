@@ -664,7 +664,7 @@ func newTestServerWithServices(
 
 func contractFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "m2", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m2", name))
 	if err != nil {
 		t.Fatalf("read M2 contract %s: %v", name, err)
 	}

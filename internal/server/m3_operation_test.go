@@ -286,7 +286,7 @@ func reviewOperationRequestForTest(
 
 func m3ContractFixture(t *testing.T, name string) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "m3", name))
+	data, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "testdata", "contracts", "m3", name))
 	if err != nil {
 		t.Fatalf("read M3 contract %s: %v", name, err)
 	}
