@@ -945,10 +945,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   });
 
   useEffect(() => {
-    globalThis.document.title = currentPath ? `${currentPath} — mdReview` : "mdReview";
-  }, [currentPath]);
-
-  useEffect(() => {
     if (
       !focusDocumentAfterLoadRef.current ||
       !("path" in document) ||
