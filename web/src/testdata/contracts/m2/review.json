@@ -1,0 +1,38 @@
+{
+  "path": "README.md",
+  "documentRevision": "d0820a0afd1e1aa6b8bbf91c8f6915e6d544eec8be1c032f7779a5e6a6b7b908",
+  "reviewRevision": "c768362be8bc6b9485f8865205aa57262244304de02176921b1c1910f4b9e9c5",
+  "threads": [
+    {
+      "id": "thread_AAAAAAAAAAAAAAAAAAAAAA",
+      "anchor": {
+        "type": "text",
+        "range": {
+          "start": 2,
+          "end": 10
+        },
+        "source": "mdReview",
+        "text": "mdReview"
+      },
+      "attachment": {
+        "state": "attached",
+        "currentRange": {
+          "start": 2,
+          "end": 10
+        }
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_BBBBBBBBBBBBBBBBBBBBBB",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Explain the name.",
+          "createdAt": "2026-07-28T14:30:00Z"
+        }
+      ]
+    }
+  ]
+}

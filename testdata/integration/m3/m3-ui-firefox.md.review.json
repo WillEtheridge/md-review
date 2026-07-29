@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_ui_workflow",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "handled",
+      "messages": [
+        {
+          "id": "message_ui_human",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Original browser feedback.",
+          "createdAt": "2026-07-28T08:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread_ui_delete",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_ui_delete",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Delete this unreplied browser thread.",
+          "createdAt": "2026-07-28T08:01:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread_ui_agent",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "handled",
+      "messages": [
+        {
+          "id": "message_ui_agent_prompt",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Please address this browser feedback.",
+          "createdAt": "2026-07-28T08:02:00Z"
+        },
+        {
+          "id": "message_ui_agent",
+          "author": {
+            "type": "agent",
+            "name": "Codex"
+          },
+          "body": "Agent-authored browser explanation.",
+          "createdAt": "2026-07-28T08:03:00Z"
+        }
+      ]
+    }
+  ]
+}

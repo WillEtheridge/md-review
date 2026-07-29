@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "skillSha256": "08f9c8e1d2fdb8a08245aa9477e544dc2cf070e47beb98cb6e32f83d138c3774",
+  "agent": "m6_skill_forward_eval",
+  "modelFamily": "Terra",
+  "prompt": "Address the mdReview feedback in this directory. Use your agent name in any reply.",
+  "sourceFixture": "../m6-skill",
+  "recordedAt": "2026-07-29T03:56:26Z"
+}

@@ -1,0 +1,4 @@
+MDREVIEW_PLACEHOLDER:WEB
+
+This inert file keeps the clean-checkout go:embed pattern valid. A release
+requires a real web/dist/index.html and JavaScript entry.

@@ -1,0 +1,16 @@
+/build/
+
+# Local development records and generated browser-test artefacts.
+/.private/
+/test-results/
+/playwright-report/
+
+/web/node_modules/
+/web/dist/*
+!/web/dist/placeholder.txt
+/web/coverage/
+/web/playwright-report/
+/web/test-results/
+
+*.coverprofile
+*.prof

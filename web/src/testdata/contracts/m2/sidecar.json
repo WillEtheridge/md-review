@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_AAAAAAAAAAAAAAAAAAAAAA",
+      "anchor": {
+        "type": "text",
+        "range": {
+          "start": 2,
+          "end": 10
+        },
+        "source": "mdReview",
+        "text": "mdReview"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_BBBBBBBBBBBBBBBBBBBBBB",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Explain the name.",
+          "createdAt": "2026-07-28T14:30:00Z"
+        }
+      ]
+    }
+  ]
+}

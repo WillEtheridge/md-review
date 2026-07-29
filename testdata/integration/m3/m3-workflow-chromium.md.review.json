@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_workflow",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "handled",
+      "messages": [
+        {
+          "id": "message_human",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Original human feedback.",
+          "createdAt": "2026-07-29T08:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread_delete",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_delete",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "This unreplied thread may be deleted.",
+          "createdAt": "2026-07-29T08:01:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread_agent",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "handled",
+      "messages": [
+        {
+          "id": "message_agent_prompt",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Please address this feedback.",
+          "createdAt": "2026-07-29T08:02:00Z"
+        },
+        {
+          "id": "message_agent",
+          "author": {
+            "type": "agent",
+            "name": "Codex"
+          },
+          "body": "Agent-authored explanation.",
+          "createdAt": "2026-07-29T08:03:00Z"
+        }
+      ]
+    }
+  ]
+}

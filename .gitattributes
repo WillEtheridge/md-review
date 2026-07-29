@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Gate A verifies the raw distinction between LF and CRLF source bytes.
+spikes/selection-mapping/public/fixtures/line-endings-crlf.md -text
+
+*.woff binary
+*.woff2 binary
+

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "precisionSentinel": 900719925474099312345678901234567890,
+  "threads": [
+    {
+      "id": "thread-contact",
+      "anchor": {
+        "type": "text",
+        "range": {
+          "start": 23,
+          "end": 38
+        },
+        "source": "old@example.com",
+        "text": "old@example.com",
+        "fixtureExtension": {
+          "largeNumber": 900719925474099312345678901234567891
+        }
+      },
+      "status": "handled",
+      "messages": [
+        {
+          "id": "message-contact-review",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Replace this with support@example.com.",
+          "createdAt": "2026-07-28T12:00:00Z"
+        },
+        {
+          "id": "message-m6-skill-forward-eval-contact",
+          "author": {
+            "type": "agent",
+            "name": "m6_skill_forward_eval"
+          },
+          "body": "Updated the release contact to support@example.com.",
+          "createdAt": "2026-07-29T03:56:26Z"
+        }
+      ]
+    },
+    {
+      "id": "thread-date",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message-date-review",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Do not choose a release date yet; I need to provide it in a follow-up.",
+          "createdAt": "2026-07-28T12:01:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread-title-history",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "resolved",
+      "messages": [
+        {
+          "id": "message-title-review",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Use the agreed launch-plan title.",
+          "createdAt": "2026-07-28T11:58:00Z"
+        },
+        {
+          "id": "message-title-agent",
+          "author": {
+            "type": "agent",
+            "name": "Prior agent"
+          },
+          "body": "Changed the title to Launch plan.",
+          "createdAt": "2026-07-28T11:59:00Z"
+        }
+      ],
+      "fixtureExtension": "preserve exactly"
+    }
+  ],
+  "fixtureObject": {
+    "enabled": true,
+    "note": "Fresh-agent preservation sentinel"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "families": [
+    {
+      "family": "PT Serif",
+      "release": "main@7ff85c87f93ea6cca5f41c69f2e4edcb90240f26",
+      "commit": "7ff85c87f93ea6cca5f41c69f2e4edcb90240f26",
+      "source": "https://github.com/google/fonts/tree/7ff85c87f93ea6cca5f41c69f2e4edcb90240f26/ofl/ptserif",
+      "download": "https://github.com/google/fonts/archive/7ff85c87f93ea6cca5f41c69f2e4edcb90240f26.tar.gz",
+      "modified": false,
+      "license": {
+        "path": "pt-serif/OFL.txt",
+        "sha256": "ddf311c28ddf5a5ad9747649837346b67bed9d356789c3072bb27dbce49e514d"
+      },
+      "files": [
+        {
+          "path": "pt-serif/PT_Serif-Web-Regular.ttf",
+          "sha256": "a4951fade06ff8f09b7673aa81ffb65a8cd409e24d3289a6dc670bc4dda2557a",
+          "style": "normal",
+          "weight": 400
+        },
+        {
+          "path": "pt-serif/PT_Serif-Web-Italic.ttf",
+          "sha256": "f57e95ff9dc85691a3b2e193f2028db36f6663939a46c0fc4f286d618b80b7ce",
+          "style": "italic",
+          "weight": 400
+        },
+        {
+          "path": "pt-serif/PT_Serif-Web-Bold.ttf",
+          "sha256": "038ba7336bd7ea14f12ad155bed51a4345cac5153275d521dec3ba04021c526e",
+          "style": "normal",
+          "weight": 700
+        },
+        {
+          "path": "pt-serif/PT_Serif-Web-BoldItalic.ttf",
+          "sha256": "f003788ba08981eb0988b3557a6f224a53dab49c20e283e8b74d5af3c466f8be",
+          "style": "italic",
+          "weight": 700
+        }
+      ]
+    },
+    {
+      "family": "Inter",
+      "release": "v4.1",
+      "commit": "e3a3d4c57d5ecc01453a575621882a384c1995a3",
+      "source": "https://github.com/rsms/inter/tree/v4.1",
+      "download": "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+      "modified": false,
+      "license": {
+        "path": "inter/LICENSE.txt",
+        "sha256": "262481e844521b326f5ecd053e59b98c8b2da78c8ee1bdbb6e8174305e54935a"
+      },
+      "files": [
+        {
+          "path": "inter/InterVariable.woff2",
+          "sha256": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
+          "style": "normal",
+          "weight": "100 900"
+        },
+        {
+          "path": "inter/InterVariable-Italic.woff2",
+          "sha256": "e564f652916db6c139570fefb9524a77c4d48f30c92928de9db19b6b5c7a262a",
+          "style": "italic",
+          "weight": "100 900"
+        }
+      ]
+    },
+    {
+      "family": "JetBrains Mono",
+      "release": "v2.304",
+      "commit": "cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9",
+      "source": "https://github.com/JetBrains/JetBrainsMono/tree/v2.304",
+      "download": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+      "modified": false,
+      "license": {
+        "path": "jetbrains-mono/OFL.txt",
+        "sha256": "30f0c136e3c88e422d0791acd97238870f9054a9729bc34cf2ff0d4ed8cac4ad"
+      },
+      "files": [
+        {
+          "path": "jetbrains-mono/JetBrainsMono-Regular.woff2",
+          "sha256": "a9cb1cd82332b23a47e3a1239d25d13c86d16c4220695e34b243effa999f45f2",
+          "style": "normal",
+          "weight": 400
+        },
+        {
+          "path": "jetbrains-mono/JetBrainsMono-Italic.woff2",
+          "sha256": "cb6a1b246318ed3885d7dffa14a2609297fe80e9b8e500bea33b52fa312a36a4",
+          "style": "italic",
+          "weight": 400
+        },
+        {
+          "path": "jetbrains-mono/JetBrainsMono-Bold.woff2",
+          "sha256": "c503cc5ec5f8b2c7666b7ecda1adf44bd45f2e6579b2eba0fc292150416588a2",
+          "style": "normal",
+          "weight": 700
+        },
+        {
+          "path": "jetbrains-mono/JetBrainsMono-BoldItalic.woff2",
+          "sha256": "3a013466c0eee979fb9d42c2d7a8887cd3645dc8b897cfc5b71781cf982efc5a",
+          "style": "italic",
+          "weight": 700
+        }
+      ]
+    }
+  ]
+}

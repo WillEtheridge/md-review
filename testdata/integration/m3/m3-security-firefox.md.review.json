@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_security",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_security",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Security boundary feedback.",
+          "createdAt": "2026-07-29T08:40:00Z"
+        }
+      ]
+    }
+  ]
+}

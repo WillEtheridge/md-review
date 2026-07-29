@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdreview.dev/schema/review-v1.schema.json",
+  "title": "mdReview sidecar schema version 1",
+  "type": "object",
+  "required": ["schemaVersion", "threads"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "threads": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/thread"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "thread": {
+      "type": "object",
+      "required": ["id", "anchor", "status", "messages"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "anchor": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/documentAnchor"
+            },
+            {
+              "$ref": "#/$defs/textAnchor"
+            }
+          ]
+        },
+        "status": {
+          "enum": ["open", "handled", "resolved"]
+        },
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/message"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "documentAnchor": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "const": "document"
+        }
+      },
+      "additionalProperties": true
+    },
+    "textAnchor": {
+      "type": "object",
+      "required": ["type", "range", "source", "text"],
+      "properties": {
+        "type": {
+          "const": "text"
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "range": {
+      "type": "object",
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "message": {
+      "type": "object",
+      "required": ["id", "author", "body", "createdAt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "author": {
+          "$ref": "#/$defs/author"
+        },
+        "body": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "editedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": true
+    },
+    "author": {
+      "type": "object",
+      "required": ["type", "name"],
+      "properties": {
+        "type": {
+          "enum": ["human", "agent"]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

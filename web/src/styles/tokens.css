@@ -1,0 +1,240 @@
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/pt-serif/PT_Serif-Web-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/pt-serif/PT_Serif-Web-Italic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/pt-serif/PT_Serif-Web-Bold.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "PT Serif";
+  src: url("/fonts/pt-serif/PT_Serif-Web-BoldItalic.ttf") format("truetype");
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter/InterVariable.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/inter/InterVariable-Italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-Regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-Italic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-Bold.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono/JetBrainsMono-BoldItalic.woff2") format("woff2");
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+  font-synthesis: none;
+
+  --font-interface: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-reading: "PT Serif", ui-serif, Georgia, serif;
+  --font-code: "JetBrains Mono", ui-monospace, monospace;
+
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-ui: 0.875rem;
+  --text-reading: 1.0625rem;
+  --leading-ui: 1.5;
+  --leading-reading: 1.72;
+  --reading-width: 58rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  --border-rule: 1px;
+  --radius-small: 0.25rem;
+  --radius-medium: 0.5rem;
+  --focus-width: 0.1875rem;
+  --focus-offset: 0.125rem;
+  --shadow-raised: 0 0.25rem 1rem rgb(50 42 32 / 14%);
+  --shadow-overlay: 0 0.75rem 2rem rgb(50 42 32 / 18%);
+  --image-outline: rgb(0 0 0 / 10%);
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --color-canvas: #f0ece3;
+  --color-panel: #f7f3ea;
+  --color-paper: #fffdf8;
+  --color-review: #ece5da;
+  --color-control: #fbf8f1;
+  --color-code: #f1ebe0;
+  --color-text: #292722;
+  --color-muted: #666158;
+  --color-faint: #817a6f;
+  --color-accent: #8b4936;
+  --color-accent-contrast: #fffaf3;
+  --color-accent-soft: #ead6ca;
+  --color-link: #7e3d2d;
+  --color-border: #d4ccbd;
+  --color-border-strong: #b8ad9c;
+  --color-focus: #1f67b7;
+  --color-error: #9b3934;
+  --color-error-soft: #f4dfda;
+  --color-open: #995038;
+  --color-handled: #4d6e45;
+  --color-resolved: #626970;
+  --color-detached: #79566e;
+  --color-active: #8b4936;
+  --color-draft: #276cae;
+  --color-conflict: #a3473d;
+  --color-uncertain: #8b651f;
+  --syntax-keyword: #8c3f55;
+  --syntax-string: #4e6c36;
+  --syntax-number: #895c1f;
+  --syntax-title: #3f5f82;
+  --syntax-comment: #777166;
+  --syntax-punctuation: #655f56;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="system"] {
+  color-scheme: light dark;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #181a19;
+  --color-panel: #202220;
+  --color-paper: #252725;
+  --color-review: #1d1f1e;
+  --color-control: #2a2d2a;
+  --color-code: #1b1d1c;
+  --color-text: #ece8df;
+  --color-muted: #b8b1a5;
+  --color-faint: #918a7f;
+  --color-accent: #df947b;
+  --color-accent-contrast: #231714;
+  --color-accent-soft: #50362e;
+  --color-link: #ef9f84;
+  --color-border: #41443f;
+  --color-border-strong: #60645d;
+  --color-focus: #96c4ff;
+  --color-error: #f2a198;
+  --color-error-soft: #4b2926;
+  --color-open: #e9a187;
+  --color-handled: #abd095;
+  --color-resolved: #b8c0c8;
+  --color-detached: #d5a8c8;
+  --color-active: #efaa91;
+  --color-draft: #9bc8ff;
+  --color-conflict: #f0a39a;
+  --color-uncertain: #e6c173;
+  --syntax-keyword: #efa0b5;
+  --syntax-string: #aed08d;
+  --syntax-number: #e5bb76;
+  --syntax-title: #9ec7ef;
+  --syntax-comment: #9c968b;
+  --syntax-punctuation: #c3bdb2;
+  --shadow-raised: 0 0.25rem 1rem rgb(0 0 0 / 28%);
+  --shadow-overlay: 0 0.75rem 2rem rgb(0 0 0 / 36%);
+  --image-outline: rgb(255 255 255 / 10%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+
+    --color-canvas: #181a19;
+    --color-panel: #202220;
+    --color-paper: #252725;
+    --color-review: #1d1f1e;
+    --color-control: #2a2d2a;
+    --color-code: #1b1d1c;
+    --color-text: #ece8df;
+    --color-muted: #b8b1a5;
+    --color-faint: #918a7f;
+    --color-accent: #df947b;
+    --color-accent-contrast: #231714;
+    --color-accent-soft: #50362e;
+    --color-link: #ef9f84;
+    --color-border: #41443f;
+    --color-border-strong: #60645d;
+    --color-focus: #96c4ff;
+    --color-error: #f2a198;
+    --color-error-soft: #4b2926;
+    --color-open: #e9a187;
+    --color-handled: #abd095;
+    --color-resolved: #b8c0c8;
+    --color-detached: #d5a8c8;
+    --color-active: #efaa91;
+    --color-draft: #9bc8ff;
+    --color-conflict: #f0a39a;
+    --color-uncertain: #e6c173;
+    --syntax-keyword: #efa0b5;
+    --syntax-string: #aed08d;
+    --syntax-number: #e5bb76;
+    --syntax-title: #9ec7ef;
+    --syntax-comment: #9c968b;
+    --syntax-punctuation: #c3bdb2;
+    --shadow-raised: 0 0.25rem 1rem rgb(0 0 0 / 28%);
+    --shadow-overlay: 0 0.75rem 2rem rgb(0 0 0 / 36%);
+    --image-outline: rgb(255 255 255 / 10%);
+  }
+}

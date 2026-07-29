@@ -1,0 +1,9 @@
+{
+  "documentPath": "README.md",
+  "expectedDocumentRevision": "d0820a0afd1e1aa6b8bbf91c8f6915e6d544eec8be1c032f7779a5e6a6b7b908",
+  "expectedReviewRevision": "c768362a5157f9fc009c0a726a5e32b2ab46df1a18d1819a0344f30a8f21b86f",
+  "targetFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+  "message": {
+    "body": "Please clarify the introduction and conclusion."
+  }
+}

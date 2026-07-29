@@ -1,0 +1,5 @@
+root-ignored.md
+/anchored.md
+wild-*.md
+!wild-keep.md
+ignored-dir/

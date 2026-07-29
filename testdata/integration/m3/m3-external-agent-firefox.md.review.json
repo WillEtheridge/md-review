@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_external",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_external_human",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Please clarify this section.",
+          "createdAt": "2026-07-29T08:50:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "./..//100%/雪",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "../message/%/猫",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Opaque identifier feedback.",
+          "createdAt": "2026-07-29T08:20:00Z"
+        }
+      ]
+    }
+  ]
+}

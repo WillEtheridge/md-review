@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_shared",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_shared",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Document B feedback.",
+          "createdAt": "2026-07-29T08:31:00Z"
+        }
+      ]
+    }
+  ]
+}

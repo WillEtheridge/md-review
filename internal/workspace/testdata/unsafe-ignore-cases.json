@@ -1,0 +1,22 @@
+[
+  {
+    "directory": "fifo",
+    "kind": "fifo",
+    "warningCode": "ignoreFileUnsafe"
+  },
+  {
+    "directory": "socket",
+    "kind": "socket",
+    "warningCode": "ignoreFileUnsafe"
+  },
+  {
+    "directory": "symlink",
+    "kind": "symlink",
+    "warningCode": "ignoreFileUnsafe"
+  },
+  {
+    "directory": "oversized",
+    "kind": "oversized",
+    "warningCode": "ignoreFileTooLarge"
+  }
+]

@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "threads": [
+    {
+      "id": "thread_target",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_target",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Target original body.",
+          "createdAt": "2026-07-29T08:10:00Z"
+        }
+      ]
+    },
+    {
+      "id": "thread_unrelated",
+      "anchor": {
+        "type": "document"
+      },
+      "status": "open",
+      "messages": [
+        {
+          "id": "message_unrelated",
+          "author": {
+            "type": "human",
+            "name": "Reviewer"
+          },
+          "body": "Unrelated original body.",
+          "createdAt": "2026-07-29T08:11:00Z"
+        }
+      ]
+    }
+  ]
+}

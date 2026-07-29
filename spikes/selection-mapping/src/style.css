@@ -1,0 +1,39 @@
+:root {
+  color: #24211d;
+  background: #f5f0e7;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+}
+
+#document {
+  box-sizing: border-box;
+  max-width: 780px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 48px;
+  background: #fffdf8;
+  line-height: 1.55;
+}
+
+pre {
+  overflow: auto;
+  padding: 16px;
+  background: #efede8;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 6px 10px;
+  border: 1px solid #aaa49a;
+}
+
+[data-md-leaf] {
+  border-radius: 2px;
+}

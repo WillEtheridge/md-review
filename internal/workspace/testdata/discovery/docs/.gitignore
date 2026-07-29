@@ -1,0 +1,3 @@
+nested-*.md
+!nested-keep.md
+/only-here.md
