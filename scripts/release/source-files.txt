@@ -47,7 +47,7 @@
 0644 internal/workspace/asset.go
 0644 internal/workspace/asset_test.go
 0644 internal/workspace/ignore.go
-0644 internal/workspace/polling_linux_test.go
+0644 internal/workspace/polling_test.go
 0644 internal/workspace/scan.go
 0644 internal/workspace/testdata/discovery/.gitignore
 0644 internal/workspace/testdata/discovery/.hidden/notes.md
@@ -73,7 +73,8 @@
 0644 internal/workspace/testdata/discovery/wild-keep.md
 0644 internal/workspace/testdata/unsafe-ignore-cases.json
 0644 internal/workspace/workspace.go
-0644 internal/workspace/workspace_linux_test.go
+0644 internal/workspace/workspace_special_linux_test.go
+0644 internal/workspace/workspace_test.go
 0644 schema/review-v1.schema.json
 0755 scripts/build-dev.sh
 0755 scripts/build-release.sh

@@ -1,4 +1,4 @@
-//go:build linux
+//go:build !windows
 
 package review
 
@@ -13,10 +13,10 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
 	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/limits"
 )
@@ -755,5 +755,5 @@ func writeFile(
 
 func setUmask(t *testing.T, mask int) int {
 	t.Helper()
-	return unix.Umask(mask)
+	return syscall.Umask(mask)
 }
