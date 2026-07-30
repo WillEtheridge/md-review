@@ -35,9 +35,8 @@ unknown field instead of rewriting it.
 Immediately before replacing a sidecar, reread both the Markdown and sidecar. Stop and re-evaluate
 if either whole-file revision changed; do not merge against the latest sidecar or compare only a
 target. Write the complete result to a same-directory temporary file and atomically replace the
-sidecar. Treat the final
-reread-to-rename interval as a residual race with uncoordinated direct writers; do not claim
-lossless multi-writer safety.
+sidecar. Treat the final reread-to-rename interval as a residual race with uncoordinated direct
+writers; do not claim lossless multi-writer safety.
 
 Edit the Markdown and sidecar files directly. Do not invent or call an mdReview comment API, MCP
 server, or comment-management CLI.

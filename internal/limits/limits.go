@@ -1,4 +1,4 @@
-// Package limits defines the fixed v0.1 bounds for untrusted content and
+// Package limits defines the fixed bounds for untrusted content and
 // frontend-retained image data.
 //
 // These values are product and security contracts, not tunable configuration.
