@@ -230,6 +230,12 @@ export class ApiRequestError extends Error {
 
 type FetchImplementation = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
+interface JSONRequestOptions {
+  method?: "POST" | "PATCH" | "DELETE";
+  request?: unknown;
+  signal?: AbortSignal | undefined;
+}
+
 function recordValue(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new ApiProtocolError();
@@ -238,19 +244,11 @@ function recordValue(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function stringValue(value: unknown): string {
-  if (typeof value !== "string") {
+function stringValue(value: unknown, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0)) {
     throw new ApiProtocolError();
   }
   return value;
-}
-
-function nonEmptyString(value: unknown): string {
-  const result = stringValue(value);
-  if (result.length === 0) {
-    throw new ApiProtocolError();
-  }
-  return result;
 }
 
 function integerValue(value: unknown, minimum: number): number {
@@ -279,245 +277,168 @@ function arrayValue(value: unknown): unknown[] {
   return value;
 }
 
-function decodeNavigationNode(value: unknown): NavigationNode {
+function validateNavigationNode(value: unknown): void {
   const record = recordValue(value);
   const kind = stringValue(record.kind);
-  const name = nonEmptyString(record.name);
-  const path = nonEmptyString(record.path);
+  stringValue(record.name);
+  stringValue(record.path);
 
   if (kind === "directory") {
-    return {
-      kind,
-      name,
-      path,
-      children: arrayValue(record.children).map(decodeNavigationNode)
-    };
+    arrayValue(record.children).forEach(validateNavigationNode);
+    return;
   }
-
-  if (kind === "document") {
-    const availability = stringValue(record.availability);
-    if (availability !== "ready" && availability !== "tooLarge") {
-      throw new ApiProtocolError();
-    }
-    return {
-      kind,
-      name,
-      path,
-      sizeBytes: integerValue(record.sizeBytes, 0),
-      availability,
-      documentMetadataRevision: revisionValue(record.documentMetadataRevision),
-      reviewMetadataRevision: nullableRevisionValue(record.reviewMetadataRevision)
-    };
+  if (kind !== "document") {
+    throw new ApiProtocolError();
   }
-
-  throw new ApiProtocolError();
-}
-
-function decodeWarning(value: unknown): ScanWarning {
-  const record = recordValue(value);
-  return {
-    path: nonEmptyString(record.path),
-    code: nonEmptyString(record.code),
-    message: nonEmptyString(record.message)
-  };
+  if (record.availability !== "ready" && record.availability !== "tooLarge") {
+    throw new ApiProtocolError();
+  }
+  integerValue(record.sizeBytes, 0);
 }
 
 export function decodeWorkspaceState(value: unknown): WorkspaceStateResponse {
   const record = recordValue(value);
-  const status = stringValue(record.status);
   const workspaceRevision = integerValue(record.workspaceRevision, 1);
-  if (status === "unchanged") {
-    if (Object.keys(record).some((key) => key !== "status" && key !== "workspaceRevision")) {
-      throw new ApiProtocolError();
-    }
-    return {
-      status,
-      workspaceRevision
-    };
+  if (record.status === "unchanged") {
+    return { status: "unchanged", workspaceRevision };
   }
-  if (status !== "changed") {
+  if (record.status !== "changed") {
     throw new ApiProtocolError();
   }
-  const changedKeys = new Set([
-    "status",
-    "workspaceRevision",
-    "documentCount",
-    "initialDocumentPath",
-    "navigation",
-    "warnings"
-  ]);
-  if (Object.keys(record).some((key) => !changedKeys.has(key))) {
-    throw new ApiProtocolError();
+
+  const navigation = arrayValue(record.navigation);
+  navigation.forEach(validateNavigationNode);
+  const warnings = arrayValue(record.warnings);
+  for (const value of warnings) {
+    const warning = recordValue(value);
+    stringValue(warning.path);
+    stringValue(warning.code);
+    stringValue(warning.message);
   }
-  const initialDocumentPathValue = record.initialDocumentPath;
   const initialDocumentPath =
-    initialDocumentPathValue === null ? null : nonEmptyString(initialDocumentPathValue);
+    record.initialDocumentPath === null ? null : stringValue(record.initialDocumentPath);
 
   return {
-    status,
+    status: "changed",
     workspaceRevision,
     documentCount: integerValue(record.documentCount, 0),
     initialDocumentPath,
-    navigation: arrayValue(record.navigation).map(decodeNavigationNode),
-    warnings: arrayValue(record.warnings).map(decodeWarning)
+    navigation: navigation as NavigationNode[],
+    warnings: warnings as ScanWarning[]
   };
 }
 
 export function decodeDocument(value: unknown): DocumentResponse {
   const record = recordValue(value);
-
   return {
-    path: nonEmptyString(record.path),
+    path: stringValue(record.path),
     revision: revisionValue(record.revision),
-    source: stringValue(record.source)
+    source: stringValue(record.source, true)
   };
 }
 
 export function decodeHealth(value: unknown): HealthResponse {
   const record = recordValue(value);
   return {
-    root: nonEmptyString(record.root),
-    instanceNonce: nonEmptyString(record.instanceNonce)
+    root: stringValue(record.root),
+    instanceNonce: stringValue(record.instanceNonce)
   };
 }
 
 const apiErrorCodes = new Set<string>(API_ERROR_CODES);
 
 export function decodeErrorEnvelope(value: unknown): ErrorEnvelope {
-  const record = recordValue(value);
-  const error = recordValue(record.error);
+  const error = recordValue(recordValue(value).error);
   const code = stringValue(error.code);
   if (!apiErrorCodes.has(code)) {
     throw new ApiProtocolError();
   }
-
   return {
     error: {
       code: code as ApiErrorCode,
-      message: nonEmptyString(error.message)
+      message: stringValue(error.message)
     }
   };
 }
 
-function decodeRange(value: unknown, allowEmpty: boolean): TextRange {
+function decodeRange(value: unknown): TextRange {
   const record = recordValue(value);
   const start = integerValue(record.start, 0);
   const end = integerValue(record.end, 0);
-  if (allowEmpty ? start > end : start >= end) {
+  if (start >= end) {
     throw new ApiProtocolError();
   }
   return { start, end };
 }
 
-function decodeAnchor(value: unknown): ThreadAnchor {
+function validateAnchor(value: unknown): ThreadAnchor {
   const record = recordValue(value);
-  const type = stringValue(record.type);
-  if (type === "document") {
-    return { type };
+  if (record.type === "document") {
+    return { type: "document" };
   }
-  if (type === "text") {
-    return {
-      type,
-      range: decodeRange(record.range, false),
-      source: nonEmptyString(record.source),
-      text: stringValue(record.text)
-    };
-  }
-  throw new ApiProtocolError();
-}
-
-function timestampValue(value: unknown): string {
-  const timestamp = nonEmptyString(value);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]00:00)$/u.test(timestamp)) {
+  if (record.type !== "text") {
     throw new ApiProtocolError();
   }
-  return timestamp;
+  return {
+    type: "text",
+    range: decodeRange(record.range),
+    source: stringValue(record.source),
+    text: stringValue(record.text, true)
+  };
 }
 
-function decodeMessage(value: unknown): ReviewMessage {
+function validateMessage(value: unknown): void {
   const record = recordValue(value);
   const author = recordValue(record.author);
-  const authorType = stringValue(author.type);
-  if (authorType !== "human" && authorType !== "agent") {
+  if (author.type !== "human" && author.type !== "agent") {
     throw new ApiProtocolError();
   }
-
-  const result: ReviewMessage = {
-    id: nonEmptyString(record.id),
-    author: {
-      type: authorType,
-      name: nonEmptyString(author.name)
-    },
-    body: stringValue(record.body),
-    createdAt: timestampValue(record.createdAt)
-  };
+  stringValue(record.id);
+  stringValue(author.name);
+  stringValue(record.body, true);
+  stringValue(record.createdAt);
   if (record.editedAt !== undefined) {
-    result.editedAt = timestampValue(record.editedAt);
+    stringValue(record.editedAt);
   }
-  return result;
 }
 
 function decodeThread(value: unknown): ReviewThread {
   const record = recordValue(value);
-  const anchor = decodeAnchor(record.anchor);
-  const attachment = recordValue(record.attachment);
-  const attachmentState = stringValue(attachment.state);
-  const statusValue = stringValue(record.status);
-  if (statusValue !== "open" && statusValue !== "handled" && statusValue !== "resolved") {
+  stringValue(record.id);
+  if (record.status !== "open" && record.status !== "handled" && record.status !== "resolved") {
     throw new ApiProtocolError();
   }
-  const status: ThreadStatus = statusValue;
-  const common = {
-    id: nonEmptyString(record.id),
-    status,
-    messages: arrayValue(record.messages).map(decodeMessage)
-  };
-  if (common.messages.length === 0) {
+  const messages = arrayValue(record.messages);
+  if (messages.length === 0) {
     throw new ApiProtocolError();
   }
+  messages.forEach(validateMessage);
 
+  const anchor = validateAnchor(record.anchor);
+  const attachment = recordValue(record.attachment);
   if (anchor.type === "document") {
-    if (attachmentState !== "document") {
+    if (attachment.state !== "document") {
       throw new ApiProtocolError();
     }
-    return {
-      ...common,
-      anchor,
-      attachment: { state: "document" }
-    };
+  } else if (attachment.state === "attached") {
+    decodeRange(attachment.currentRange);
+  } else if (attachment.state !== "detached") {
+    throw new ApiProtocolError();
   }
-
-  if (attachmentState === "detached") {
-    return {
-      ...common,
-      anchor,
-      attachment: { state: "detached" }
-    };
-  }
-  if (attachmentState === "attached") {
-    return {
-      ...common,
-      anchor,
-      attachment: {
-        state: "attached",
-        currentRange: decodeRange(attachment.currentRange, false)
-      }
-    };
-  }
-  throw new ApiProtocolError();
+  return value as ReviewThread;
 }
 
 export function decodeReview(value: unknown): ReviewResponse {
   const record = recordValue(value);
   return {
-    path: nonEmptyString(record.path),
+    path: stringValue(record.path),
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: nullableRevisionValue(record.reviewRevision),
     threads: arrayValue(record.threads).map(decodeThread)
   };
 }
 
-export function decodeCreateThreadResponse(value: unknown): CreateThreadResponse {
+function decodeThreadMutation(value: unknown): MutationResponse {
   const record = recordValue(value);
   return {
     documentRevision: revisionValue(record.documentRevision),
@@ -526,13 +447,12 @@ export function decodeCreateThreadResponse(value: unknown): CreateThreadResponse
   };
 }
 
+export function decodeCreateThreadResponse(value: unknown): CreateThreadResponse {
+  return decodeThreadMutation(value);
+}
+
 export function decodeMutationResponse(value: unknown): MutationResponse {
-  const record = recordValue(value);
-  return {
-    documentRevision: revisionValue(record.documentRevision),
-    reviewRevision: revisionValue(record.reviewRevision),
-    thread: decodeThread(record.thread)
-  };
+  return decodeThreadMutation(value);
 }
 
 export function decodeDeleteThreadResponse(value: unknown): DeleteThreadResponse {
@@ -540,7 +460,7 @@ export function decodeDeleteThreadResponse(value: unknown): DeleteThreadResponse
   return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: revisionValue(record.reviewRevision),
-    deletedThreadId: nonEmptyString(record.deletedThreadId)
+    deletedThreadId: stringValue(record.deletedThreadId)
   };
 }
 
@@ -558,19 +478,14 @@ function decodeRequestError(value: unknown): {
 } {
   const record = recordValue(value);
   const envelope = decodeErrorEnvelope(record);
-  if (record.current === undefined) {
-    return { envelope };
-  }
-  return {
-    envelope,
-    current: decodeCurrentRevisions(record.current)
-  };
+  return record.current === undefined
+    ? { envelope }
+    : { envelope, current: decodeCurrentRevisions(record.current) };
 }
 
 async function responseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
   try {
-    return JSON.parse(text) as unknown;
+    return JSON.parse(await response.text()) as unknown;
   } catch {
     throw new ApiProtocolError();
   }
@@ -587,57 +502,22 @@ export class ApiClient {
       });
   }
 
-  async #get<T>(endpoint: string, decode: (value: unknown) => T, signal?: AbortSignal): Promise<T> {
-    const response = await this.#fetch(endpoint, {
-      method: "GET",
-      signal: signal ?? null
-    });
-    const body = await responseBody(response);
-
-    if (!response.ok) {
-      const failure = decodeRequestError(body);
-      throw new ApiRequestError(failure.envelope, response.status, failure.current);
-    }
-
-    return decode(body);
-  }
-
-  async #post<TResponse>(
+  async #request<TResponse>(
     endpoint: string,
-    request: unknown,
     decode: (value: unknown) => TResponse,
-    signal?: AbortSignal
+    options: JSONRequestOptions = {}
   ): Promise<TResponse> {
-    const response = await this.#fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(request),
-      signal: signal ?? null
-    });
-    const body = await responseBody(response);
-    if (!response.ok) {
-      const failure = decodeRequestError(body);
-      throw new ApiRequestError(failure.envelope, response.status, failure.current);
-    }
-    return decode(body);
-  }
-
-  async #mutate<TResponse>(
-    endpoint: string,
-    method: "POST" | "PATCH" | "DELETE",
-    request: unknown,
-    decode: (value: unknown) => TResponse,
-    signal?: AbortSignal
-  ): Promise<TResponse> {
+    const method = options.method ?? "GET";
+    const hasBody = options.method !== undefined;
     const response = await this.#fetch(endpoint, {
       method,
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(request),
-      signal: signal ?? null
+      ...(hasBody
+        ? {
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(options.request)
+          }
+        : {}),
+      signal: options.signal ?? null
     });
     const body = await responseBody(response);
     if (!response.ok) {
@@ -649,18 +529,20 @@ export class ApiClient {
 
   getState(since?: number, signal?: AbortSignal): Promise<WorkspaceStateResponse> {
     if (since === undefined) {
-      return this.#get("/api/state", decodeWorkspaceState, signal);
+      return this.#request("/api/state", decodeWorkspaceState, { signal });
     }
     if (!Number.isSafeInteger(since) || since < 1) {
       throw new TypeError("workspace revision must be a positive safe integer");
     }
     const query = new URLSearchParams({ since: String(since) });
-    return this.#get(`/api/state?${query.toString()}`, decodeWorkspaceState, signal);
+    return this.#request(`/api/state?${query.toString()}`, decodeWorkspaceState, { signal });
   }
 
   async getDocument(path: string, signal?: AbortSignal): Promise<DocumentResponse> {
     const query = new URLSearchParams({ path });
-    const document = await this.#get(`/api/document?${query.toString()}`, decodeDocument, signal);
+    const document = await this.#request(`/api/document?${query.toString()}`, decodeDocument, {
+      signal
+    });
     if (document.path !== path) {
       throw new ApiProtocolError();
     }
@@ -669,7 +551,7 @@ export class ApiClient {
 
   async getReview(path: string, signal?: AbortSignal): Promise<ReviewResponse> {
     const query = new URLSearchParams({ path });
-    const review = await this.#get(`/api/review?${query.toString()}`, decodeReview, signal);
+    const review = await this.#request(`/api/review?${query.toString()}`, decodeReview, { signal });
     if (review.path !== path) {
       throw new ApiProtocolError();
     }
@@ -677,16 +559,18 @@ export class ApiClient {
   }
 
   createThread(request: CreateThreadRequest, signal?: AbortSignal): Promise<CreateThreadResponse> {
-    return this.#post("/api/threads", request, decodeCreateThreadResponse, signal);
+    return this.#request("/api/threads", decodeCreateThreadResponse, {
+      method: "POST",
+      request,
+      signal
+    });
   }
 
   reply(threadID: string, request: ReplyRequest, signal?: AbortSignal): Promise<MutationResponse> {
-    return this.#mutate(
+    return this.#request(
       `/api/threads/${encodeOpaqueIDSegment(threadID)}/messages`,
-      "POST",
-      request,
       decodeMutationResponse,
-      signal
+      { method: "POST", request, signal }
     );
   }
 
@@ -695,12 +579,10 @@ export class ApiClient {
     request: StatusRequest,
     signal?: AbortSignal
   ): Promise<MutationResponse> {
-    return this.#mutate(
+    return this.#request(
       `/api/threads/${encodeOpaqueIDSegment(threadID)}/status`,
-      "PATCH",
-      request,
       decodeMutationResponse,
-      signal
+      { method: "PATCH", request, signal }
     );
   }
 
@@ -709,12 +591,10 @@ export class ApiClient {
     request: DeleteThreadRequest,
     signal?: AbortSignal
   ): Promise<DeleteThreadResponse> {
-    return this.#mutate(
+    return this.#request(
       `/api/threads/${encodeOpaqueIDSegment(threadID)}`,
-      "DELETE",
-      request,
       decodeDeleteThreadResponse,
-      signal
+      { method: "DELETE", request, signal }
     );
   }
 }

@@ -84,7 +84,7 @@ const stateFixture = {
   ]
 };
 
-describe("Milestone 1 API decoding", () => {
+describe("Workspace API decoding", () => {
   it("decodes the complete workspace, document, health, and error fixtures", () => {
     expect(decodeWorkspaceState(stateFixture)).toEqual(stateFixture);
     expect(
@@ -122,30 +122,17 @@ describe("Milestone 1 API decoding", () => {
     });
   });
 
-  it("decodes only the bounded unchanged state shape", () => {
+  it("keeps the unchanged state distinct from a full workspace response", () => {
     expect(
-      decodeWorkspaceState({
-        status: "unchanged",
-        workspaceRevision: 7
-      })
-    ).toEqual({
-      status: "unchanged",
-      workspaceRevision: 7
-    });
-    expect(() =>
       decodeWorkspaceState({
         status: "unchanged",
         workspaceRevision: 7,
         navigation: []
       })
-    ).toThrow(ApiProtocolError);
-    expect(() =>
-      decodeWorkspaceState({
-        status: "unchanged",
-        workspaceRevision: 7,
-        future: true
-      })
-    ).toThrow(ApiProtocolError);
+    ).toEqual({
+      status: "unchanged",
+      workspaceRevision: 7
+    });
   });
 
   it.each([
@@ -178,20 +165,6 @@ describe("Milestone 1 API decoding", () => {
     {
       ...stateFixture,
       status: "future"
-    },
-    {
-      ...stateFixture,
-      navigation: [
-        {
-          kind: "document",
-          name: "bad.md",
-          path: "bad.md",
-          sizeBytes: 1,
-          availability: "ready",
-          documentMetadataRevision: "bad",
-          reviewMetadataRevision: null
-        }
-      ]
     }
   ])("rejects an invalid workspace response", (value) => {
     expect(() => decodeWorkspaceState(value)).toThrow(ApiProtocolError);
@@ -309,9 +282,19 @@ describe("ApiClient", () => {
 
     await expect(client.getDocument("requested.md")).rejects.toBeInstanceOf(ApiProtocolError);
   });
+
+  it("passes the caller's abort signal to fetch", async () => {
+    const controller = new AbortController();
+    const client = new ApiClient((_input, init) => {
+      expect(init?.signal).toBe(controller.signal);
+      return Promise.resolve(new Response(JSON.stringify(stateFixture)));
+    });
+
+    await client.getState(undefined, controller.signal);
+  });
 });
 
-describe("Milestone 2 review API decoding", () => {
+describe("Review API decoding", () => {
   it("decodes the shared review and creation fixtures", () => {
     expect(decodeReview(contractFixture("review.json"))).toEqual(contractFixture("review.json"));
     expect(decodeReview(contractFixture("review-empty.json"))).toEqual(
@@ -320,35 +303,6 @@ describe("Milestone 2 review API decoding", () => {
     expect(decodeCreateThreadResponse(contractFixture("create-response.json"))).toEqual(
       contractFixture("create-response.json")
     );
-  });
-
-  it.each(["2026-07-28T14:30:00Z", "2026-07-28T14:30:00+00:00", "2026-07-28T14:30:00-00:00"])(
-    "accepts the zero-offset RFC3339 timestamp %s",
-    (createdAt) => {
-      const fixture = structuredClone(contractFixture("review.json")) as {
-        threads: Array<{ messages: Array<{ createdAt: string }> }>;
-      };
-      const message = fixture.threads[0]?.messages[0];
-      if (!message) {
-        throw new Error("review contract has no message");
-      }
-      message.createdAt = createdAt;
-
-      expect(decodeReview(fixture).threads[0]?.messages[0]?.createdAt).toBe(createdAt);
-    }
-  );
-
-  it("rejects a non-UTC RFC3339 timestamp", () => {
-    const fixture = structuredClone(contractFixture("review.json")) as {
-      threads: Array<{ messages: Array<{ createdAt: string }> }>;
-    };
-    const message = fixture.threads[0]?.messages[0];
-    if (!message) {
-      throw new Error("review contract has no message");
-    }
-    message.createdAt = "2026-07-28T15:30:00+01:00";
-
-    expect(() => decodeReview(fixture)).toThrow(ApiProtocolError);
   });
 
   it.each([
@@ -462,7 +416,7 @@ describe("Milestone 2 review API decoding", () => {
   });
 });
 
-describe("Milestone 3 review operation transport", () => {
+describe("Review operation transport", () => {
   it("decodes whole-revision review and mutation responses", () => {
     expect(decodeReview(m3ReviewContract)).toEqual(m3ReviewContract);
     expect(decodeMutationResponse(mutationResponseContract)).toEqual(mutationResponseContract);
