@@ -1,16 +1,20 @@
+/** Clock abstraction that makes cadence and cleanup deterministic in tests. */
 export interface PollClock {
   now(): number;
   setTimeout(callback: () => void, delayMs: number): number;
   clearTimeout(handle: number): void;
 }
 
+/** Visibility abstraction that owns the browser event subscription lifecycle. */
 export interface VisibilitySource {
   isVisible(): boolean;
   subscribe(listener: () => void): () => void;
 }
 
+/** Whether a polling failure should keep the coordinator alive. */
 export type PollErrorDecision = "continue" | "stop";
 
+/** Dependencies and cadence for one polling coordinator. */
 export interface PollCoordinatorOptions {
   clock: PollClock;
   visibility: VisibilitySource;
@@ -39,7 +43,9 @@ export class PollCoordinator {
   #timer: number | null = null;
   #active:
     | {
+        /** Cancels transport work when visibility or a newer trigger invalidates it. */
         controller: AbortController;
+        /** Anchors the next timer to cycle start, avoiding request-duration drift. */
         startedAtMs: number;
       }
     | undefined;
@@ -111,6 +117,9 @@ export class PollCoordinator {
     }
     this.#clearTimer();
     if (this.#active) {
+      // Never overlap reconciliation. A trigger during an active request becomes
+      // one trailing cycle; restartActive additionally invalidates the response
+      // that was based on pre-trigger state.
       this.#trailing = true;
       if (restartActive) {
         this.#active.controller.abort();
@@ -131,6 +140,8 @@ export class PollCoordinator {
     };
     this.#active = active;
 
+    // The identity check in finally prevents an aborted/obsolete cycle from
+    // clearing state belonging to a newer cycle.
     void this.#run(controller.signal)
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
@@ -173,6 +184,7 @@ export class PollCoordinator {
   }
 }
 
+/** Adapts browser performance/timer APIs to the polling coordinator contract. */
 export function browserPollClock(): PollClock {
   return {
     now: () => performance.now(),
@@ -183,6 +195,7 @@ export function browserPollClock(): PollClock {
   };
 }
 
+/** Adapts Page Visibility to the coordinator's cancellable subscription contract. */
 export function browserVisibilitySource(documentObject: Document): VisibilitySource {
   return {
     isVisible: () => documentObject.visibilityState === "visible",

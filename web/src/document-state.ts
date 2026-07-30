@@ -1,5 +1,6 @@
 import { ApiRequestError } from "./api";
 
+/** Stable UI states for a document that could not be opened. */
 export type DocumentFailure =
   | {
       status: "tooLarge";
@@ -14,7 +15,10 @@ export type DocumentFailure =
       status: "error";
     };
 
+/** Converts an API failure into the small document-state union rendered by App. */
 export function documentFailure(error: unknown): DocumentFailure {
+  // Keep server distinctions that change the recovery UI, while collapsing
+  // transport and unexpected failures into a safe generic state.
   if (!(error instanceof ApiRequestError)) {
     return { status: "error" };
   }

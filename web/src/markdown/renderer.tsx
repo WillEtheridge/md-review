@@ -13,7 +13,9 @@ import { alignRenderedText, fencedCodeContentSpan, inlineCodeContentSpan } from 
 import type { ImageDescriptor, LeafMapping, RenderModel } from "./types";
 
 export interface DocumentNavigation {
+  /** Indexed slash-relative document identity. */
   path: string;
+  /** Optional heading fragment to reveal after the document is loaded. */
   fragment: string | null;
 }
 
@@ -33,6 +35,10 @@ const sourceAuthoredAccessibilityProperties = new Set([
   "ariaLabelledBy",
   "tabIndex"
 ]);
+
+// Markdown is untrusted presentation. These source-authored accessibility
+// properties are stripped so content cannot move focus, replace the browser's
+// accessible name, or create a misleading relationship in the review UI.
 
 function propertyName(property: SanitizeProperty): string {
   return typeof property === "string" ? property : property[0];
@@ -92,6 +98,8 @@ function annotateCodeElement(
   leaves: Map<string, LeafMapping>,
   annotations: WeakMap<Text, LeafMapping>
 ): void {
+  // Code nodes need a separate span calculation because remark-rehype removes
+  // fences and inline delimiters before the visible text reaches the DOM.
   const span = positionedSpan(code);
   if (!span) {
     return;
@@ -136,6 +144,9 @@ function annotateSyntheticText(
   leaves: Map<string, LeafMapping>,
   annotations: WeakMap<Text, LeafMapping>
 ): void {
+  // Some rehype nodes have no source position. We map only an unambiguous core
+  // inside the nearest positioned ancestor; repeated text is intentionally left
+  // unmapped instead of attaching a selection to an arbitrary occurrence.
   const ancestorSpan = ancestor ? positionedSpan(ancestor) : undefined;
   const leading = text.value.match(/^\s*/u)?.[0].length ?? 0;
   const trailing = text.value.match(/\s*$/u)?.[0].length ?? 0;
@@ -175,6 +186,8 @@ function annotateSyntheticText(
 }
 
 function annotateTree(source: string, root: Root): Pick<RenderModel, "leaves" | "annotations"> {
+  // Every accepted selection must pass through this single annotation pass so
+  // parser normalization and DOM mapping share one source of truth.
   const leaves = new Map<string, LeafMapping>();
   const annotations = new WeakMap<Text, LeafMapping>();
   let leafNumber = 0;
@@ -262,7 +275,8 @@ function makeMediaInert(element: Element): void {
     : "Embedded media omitted";
 
   // No source-authored media URL survives into the render tree. The validated
-  // local image path is added separately after sanitisation.
+  // local image path is added separately after sanitisation, which prevents a
+  // parser or browser from issuing a request before the asset policy runs.
   element.tagName = "span";
   element.properties = {
     className: ["markdown-media-placeholder"],
@@ -321,6 +335,9 @@ function relativeImageDescriptor(source: string, element: Element): ImageDescrip
 }
 
 function secureRenderTree(source: string, root: Root): WeakMap<Element, ImageDescriptor> {
+  // This transform is both a security boundary and a mapping preparation pass:
+  // it assigns deterministic heading IDs, removes active media, and records
+  // only relative image descriptors that the server can validate again.
   const slugCounts = new Map<string, number>();
   const images = new WeakMap<Element, ImageDescriptor>();
 
@@ -367,7 +384,11 @@ function secureRenderTree(source: string, root: Root): WeakMap<Element, ImageDes
   return images;
 }
 
+/** Parses, sanitizes, secures, and annotates one exact Markdown source string. */
 export async function buildRenderModel(source: string): Promise<RenderModel> {
+  // Keep parsing, sanitization, security rewriting, and source annotation in
+  // one pipeline. The returned model is internally consistent for this exact
+  // source; callers must rebuild it after any document revision change.
   const processor = unified()
     .use(remarkParse)
     .use(remarkGfm)
@@ -403,6 +424,9 @@ const blockedURLProperties = new Set([
 ]);
 
 function elementProperties(properties: Element["properties"]): Record<string, unknown> {
+  // URL-bearing properties are omitted even after sanitization. Links and
+  // images are rendered through policy-specific components so no future parser
+  // change can accidentally turn an inert value into a browser request.
   const result: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(properties)) {
     if (blockedURLProperties.has(name)) {
@@ -425,6 +449,9 @@ function renderLink(
   key: string,
   context: RenderContext
 ): ComponentChild {
+  // Render policy decides whether a link is external, a same-document fragment,
+  // an indexed-document navigation, or inert. The HAST href is never trusted by
+  // the component without that classification.
   const children = node.children.map((child, index) =>
     renderNode(model, child, `${key}.${String(index)}`, context)
   );
@@ -479,6 +506,9 @@ function renderNode(
   key: string,
   context: RenderContext
 ): ComponentChild {
+  // Rendering is deliberately a second defense behind secureRenderTree. This
+  // fallback keeps a newly introduced media node inert until its policy path is
+  // explicitly implemented.
   if (node.type === "text") {
     const leaf = model.annotations.get(node);
     if (!leaf) {
@@ -563,6 +593,7 @@ function renderNode(
   return null;
 }
 
+/** Renders a previously built model and routes safe document links to App. */
 export function MarkdownDocument({
   documentRef,
   model,

@@ -21,32 +21,49 @@ import (
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
+// contentSecurityPolicy keeps the browser shell self-contained. Markdown and
+// sidecar content are untrusted, so the shell cannot execute or frame content
+// supplied by a document and can request images only through this origin.
 const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 // Config provides immutable dependencies for a loopback HTTP server.
 // Workspace-backed endpoints are added separately once internal/workspace is
 // available; this package does not recreate that package's domain types.
 type Config struct {
-	Assets    fs.FS
+	// Assets is the embedded browser tree served for non-API requests.
+	Assets fs.FS
+	// Workspace supplies indexed identities and contained reads; it never
+	// exposes an operating-system path to the HTTP layer.
 	Workspace Workspace
-	Review    ReviewStore
+	// Review supplies document-scoped sidecar reads and semantic mutations.
+	Review ReviewStore
+	// BoundHost is the exact Host value accepted for this server instance.
 	BoundHost string
 }
 
 // Server validates requests and serves embedded browser assets.
 type Server struct {
-	assets       fs.FS
-	workspace    Workspace
-	review       ReviewStore
-	boundHost    string
+	// assets is the immutable embedded shell; it is not workspace content.
+	assets fs.FS
+	// workspace and review are consumer-owned domain services reached only by
+	// validated route handlers.
+	workspace Workspace
+	review    ReviewStore
+	// boundHost is compared byte-for-byte with request.Host on every request.
+	boundHost string
+	// assetPermits bounds image streams across all browser tabs. A request that
+	// cannot obtain a permit before cancellation performs no workspace read.
 	assetPermits chan struct{}
 }
 
 // Workspace is the server's consumer-owned read-only view of an indexed
 // workspace. Operating-system paths do not cross this interface.
 type Workspace interface {
+	// Snapshot returns the current immutable navigation index.
 	Snapshot(context.Context) (workspace.Snapshot, error)
+	// ReadDocument reopens one already indexed Markdown identity.
 	ReadDocument(context.Context, string) (workspace.DocumentContent, error)
+	// ReadAsset keeps a contained regular-file handle scoped to visit.
 	ReadAsset(context.Context, string, string, func(io.Reader, int64) error) error
 }
 
@@ -54,10 +71,15 @@ type Workspace interface {
 // derive sidecars from indexed Markdown identities rather than accepting
 // client-supplied sidecar paths.
 type ReviewStore interface {
+	// Read resolves persisted anchors against the current Markdown.
 	Read(context.Context, string) (review.Snapshot, error)
+	// CreateThread appends the first message after checking both file revisions.
 	CreateThread(context.Context, review.CreateThreadInput) (review.CreateThreadResult, error)
+	// Reply appends one human message to an existing thread.
 	Reply(context.Context, review.ReplyInput) (review.MutationResult, error)
+	// ChangeStatus applies one browser-allowed status transition.
 	ChangeStatus(context.Context, review.ChangeStatusInput) (review.MutationResult, error)
+	// DeleteThread removes an unreplied thread after revision checks.
 	DeleteThread(context.Context, review.DeleteThreadInput) (review.DeleteThreadResult, error)
 }
 
@@ -164,6 +186,8 @@ func (server *Server) requireMethod(
 }
 
 func (server *Server) serveState(response http.ResponseWriter, request *http.Request) {
+	// A conditional state response lets polling cheaply distinguish an unchanged
+	// index while keeping all navigation and warning data server-owned.
 	since, ok := workspaceRevisionQuery(request)
 	if !ok {
 		server.writeError(
@@ -217,6 +241,8 @@ func (server *Server) serveReview(response http.ResponseWriter, request *http.Re
 		return
 	}
 	if _, err := server.workspace.ReadDocument(request.Context(), documentPath); err != nil {
+		// Reading the document first prevents a valid sidecar identity from being
+		// queried after its Markdown document has left the current index.
 		server.writeDocumentError(response, err)
 		return
 	}
@@ -229,6 +255,8 @@ func (server *Server) serveReview(response http.ResponseWriter, request *http.Re
 }
 
 func documentPathQuery(request *http.Request) (string, bool) {
+	// Reject duplicate query keys rather than choosing one value implicitly;
+	// callers must identify exactly one indexed document.
 	values, err := url.ParseQuery(request.URL.RawQuery)
 	if err != nil || len(values) != 1 || len(values["path"]) != 1 || values.Get("path") == "" {
 		return "", false
@@ -237,6 +265,8 @@ func documentPathQuery(request *http.Request) (string, bool) {
 }
 
 func workspaceRevisionQuery(request *http.Request) (*uint64, bool) {
+	// A missing `since` means a full snapshot. When present, it must be one
+	// positive decimal revision so malformed polling requests fail closed.
 	if request.URL.RawQuery == "" {
 		return nil, true
 	}
@@ -275,6 +305,8 @@ func (server *Server) serveStaticAsset(response http.ResponseWriter, request *ht
 		return
 	}
 	decodedPath, err := url.PathUnescape(request.URL.EscapedPath())
+	// fs.ValidPath protects the embedded tree, while the explicit parent check
+	// prevents a path such as %2e%2e from being normalized into an asset lookup.
 	if err != nil || containsParentPathSegment(decodedPath) {
 		http.NotFound(response, request)
 		return

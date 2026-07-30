@@ -18,6 +18,8 @@ func (server *Server) serveWorkspaceAsset(
 	response http.ResponseWriter,
 	request *http.Request,
 ) {
+	// The permit is acquired before opening the file and held until the response
+	// stream finishes. This bounds both descriptors and bytes in flight.
 	documentPath, reference, ok := assetQuery(request)
 	if !ok {
 		server.writeError(
@@ -43,6 +45,9 @@ func (server *Server) serveWorkspaceAsset(
 		documentPath,
 		reference,
 		func(reader io.Reader, _ int64) error {
+			// Detect the type from bytes, not the Markdown extension or a client
+			// supplied header. The prefix is replayed into the bounded response so
+			// type detection does not drop the beginning of the image.
 			prefix, err := io.ReadAll(io.LimitReader(reader, 512))
 			if err != nil {
 				return err
@@ -61,6 +66,9 @@ func (server *Server) serveWorkspaceAsset(
 				N: limits.MaxImageAssetBytes + 1,
 			}
 			written, copyErr := io.CopyBuffer(response, bounded, make([]byte, 32*1024))
+			// Headers are already committed once streaming starts, so an over-limit
+			// or mid-stream read failure must abort the response rather than append a
+			// misleading JSON error after partial image bytes.
 			if written > limits.MaxImageAssetBytes {
 				panic(http.ErrAbortHandler)
 			}

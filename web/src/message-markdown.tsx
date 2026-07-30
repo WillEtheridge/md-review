@@ -23,12 +23,15 @@ const renderedTags = new Set([
 
 const discardedTags = new Set(["hr", "img", "input"]);
 
+/** Parses one message without source positions or raw HTML expansion. */
 export function buildMessageTree(source: string): Root {
   const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype);
   return processor.runSync(processor.parse(source));
 }
 
 function safeLink(href: unknown): string | undefined {
+  // Message links are external-only. Document navigation and fragment handling
+  // belong to the main Markdown renderer, where the current index is available.
   if (typeof href !== "string") {
     return undefined;
   }
@@ -94,7 +97,11 @@ function renderMessageNode(node: Nodes, key: string): ComponentChild {
   return h(plainContainerTag(node), { key, class: "message-reduced-content" }, children);
 }
 
+/** Renders the restricted Markdown subset used inside a review message. */
 export function MessageMarkdown({ source }: { source: string }): ComponentChild {
   const tree = useMemo(() => buildMessageTree(source), [source]);
   return h("div", { class: "message-markdown" }, renderMessageNode(tree, "message"));
 }
+// Review messages accept a deliberately smaller Markdown surface than full
+// documents. Their renderer never carries source positions, raw HTML, images,
+// or arbitrary URL schemes into the conversation panel.

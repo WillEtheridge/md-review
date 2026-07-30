@@ -2,6 +2,8 @@ import { utf16OffsetToUtf8, utf8OffsetToUtf16 } from "./alignment";
 import type { AcceptedMapping, LeafMapping, MappingResult, RenderModel, TextAnchor } from "./types";
 
 interface MappedDomPoint {
+  // The Text node and leaf identify the rendered location; offset is a UTF-16
+  // boundary within that leaf, not a persisted byte offset.
   node: Text;
   leaf: LeafMapping;
   offset: number;
@@ -141,13 +143,19 @@ function mappedBoundary(point: MappedDomPoint): {
   sourceOffset: number | null;
   leafOffset: number;
 } {
+  // A leaf can expose a DOM boundary that has no unique authored equivalent.
+  // Returning null here lets mapDomRange report a precise rejection reason.
   return {
     sourceOffset: point.leaf.boundaries[point.offset] ?? null,
     leafOffset: point.offset
   };
 }
 
+/** Maps a browser selection to a persisted anchor or an explicit safe rejection. */
 export function mapDomRange(range: Range, root: HTMLElement, model: RenderModel): MappingResult {
+  // The browser may place a Range boundary in an element wrapper or an
+  // unannotated synthetic node. Neighbor search normalizes it to the nearest
+  // mapped text leaf before consulting source boundaries.
   if (range.collapsed || range.toString().length === 0) {
     return { decision: "reject", reason: "empty-selection" };
   }
@@ -209,6 +217,9 @@ function pointForSourceOffset(
   root: HTMLElement,
   preferLast: boolean
 ): { node: Text; offset: number } | undefined {
+  // A source boundary may be represented by multiple rendered leaves after
+  // Markdown parsing. Choosing the first start and last end preserves the
+  // complete visible selection while keeping restoration deterministic.
   const matches: Array<{ node: Text; offset: number }> = [];
   for (const [id, leaf] of model.leaves) {
     for (let offset = 0; offset < leaf.boundaries.length; offset += 1) {
@@ -225,11 +236,14 @@ function pointForSourceOffset(
   return preferLast ? matches.at(-1) : matches[0];
 }
 
+/** Restores a persisted byte range into the currently rendered DOM when possible. */
 export function restoreDomRange(
   anchor: Pick<TextAnchor, "start" | "end">,
   root: HTMLElement,
   model: RenderModel
 ): Range | undefined {
+  // Restoration is best-effort: a detached or no-longer-rendered anchor should
+  // remain visible in the thread list rather than forcing a guessed DOM range.
   let sourceStart: number;
   let sourceEnd: number;
   try {

@@ -24,21 +24,30 @@ const (
 // Snapshot is one review sidecar with attachment state calculated against the
 // current Markdown bytes.
 type Snapshot struct {
-	Path             string           `json:"path"`
-	DocumentRevision string           `json:"documentRevision"`
-	ReviewRevision   *string          `json:"reviewRevision"`
-	Threads          []ResolvedThread `json:"threads"`
+	// Path is the indexed Markdown identity, never an operating-system path.
+	Path string `json:"path"`
+	// DocumentRevision hashes the exact Markdown bytes used for attachment
+	// calculation and for the browser's mutation precondition.
+	DocumentRevision string `json:"documentRevision"`
+	// ReviewRevision hashes exact sidecar bytes. Nil represents a missing sidecar.
+	ReviewRevision *string `json:"reviewRevision"`
+	// Threads are defensive copies with current attachment state calculated.
+	Threads []ResolvedThread `json:"threads"`
 }
 
 // CurrentRevisions identifies the exact files observed while handling a conflict.
 type CurrentRevisions struct {
-	DocumentRevision string  `json:"documentRevision"`
-	ReviewRevision   *string `json:"reviewRevision"`
+	// DocumentRevision is the hash observed while rejecting the operation.
+	DocumentRevision string `json:"documentRevision"`
+	// ReviewRevision is nil when the sidecar was absent at the conflict check.
+	ReviewRevision *string `json:"reviewRevision"`
 }
 
 // ConflictError reports a semantic conflict without applying a mutation.
 type ConflictError struct {
-	Kind    error
+	// Kind is ErrDocumentChanged or ErrReviewChanged and is exposed via Unwrap.
+	Kind error
+	// Current lets the browser refresh from the exact revisions that won.
 	Current CurrentRevisions
 }
 
@@ -54,27 +63,38 @@ func (conflict *ConflictError) Unwrap() error {
 
 // CreateThreadInput is the complete semantic operation accepted from the HTTP layer.
 type CreateThreadInput struct {
-	DocumentPath             string
+	// DocumentPath is an indexed slash-relative Markdown identity.
+	DocumentPath string
+	// These revisions form the whole-file optimistic concurrency precondition;
+	// nil means no sidecar existed when the browser loaded the document.
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   *string
-	Anchor                   Anchor
-	MessageBody              string
+	// Anchor is checked against the current Markdown again inside the mutation.
+	Anchor Anchor
+	// MessageBody is the first human-authored message and is bounded before write.
+	MessageBody string
 }
 
 // CreateThreadResult describes an applied text- or document-thread creation.
 type CreateThreadResult struct {
-	DocumentRevision string         `json:"documentRevision"`
-	ReviewRevision   string         `json:"reviewRevision"`
-	Thread           ResolvedThread `json:"thread"`
+	// DocumentRevision is the exact Markdown revision used for the write.
+	DocumentRevision string `json:"documentRevision"`
+	// ReviewRevision is the hash of the complete emitted sidecar.
+	ReviewRevision string `json:"reviewRevision"`
+	// Thread is the created thread with its current attachment calculated.
+	Thread ResolvedThread `json:"thread"`
 }
 
 // ReplyInput identifies one thread and the human reply to append.
 type ReplyInput struct {
+	// DocumentPath and revisions identify the exact browser snapshot being edited.
 	DocumentPath             string
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
-	ThreadID                 string
-	MessageBody              string
+	// ThreadID is opaque; its prefix and encoding have no business meaning.
+	ThreadID string
+	// MessageBody is appended as a new Reviewer-authored message.
+	MessageBody string
 }
 
 // ChangeStatusInput identifies one thread and an allowed human status transition.
@@ -83,29 +103,38 @@ type ChangeStatusInput struct {
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
 	ThreadID                 string
-	Status                   ThreadStatus
+	// Status is limited to browser-allowed open/resolved transitions. Agents use
+	// a separate workflow to report handled status.
+	Status ThreadStatus
 }
 
 // DeleteThreadInput identifies one unreplied thread to remove.
 type DeleteThreadInput struct {
+	// DocumentPath and revisions identify the exact browser snapshot being edited.
 	DocumentPath             string
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
-	ThreadID                 string
+	// ThreadID is the only thread eligible for this deletion.
+	ThreadID string
 }
 
 // MutationResult describes an applied reply or status change.
 type MutationResult struct {
-	DocumentRevision string         `json:"documentRevision"`
-	ReviewRevision   string         `json:"reviewRevision"`
-	Thread           ResolvedThread `json:"thread"`
+	// DocumentRevision and ReviewRevision are the revisions after the mutation.
+	DocumentRevision string `json:"documentRevision"`
+	ReviewRevision   string `json:"reviewRevision"`
+	// Thread is populated for reply and status operations; deletion returns a
+	// separate result because its target no longer exists.
+	Thread ResolvedThread `json:"thread"`
 }
 
 // DeleteThreadResult describes an applied unreplied-thread deletion.
 type DeleteThreadResult struct {
+	// DocumentRevision and ReviewRevision identify the state after deletion.
 	DocumentRevision string `json:"documentRevision"`
 	ReviewRevision   string `json:"reviewRevision"`
-	DeletedThreadID  string `json:"deletedThreadId"`
+	// DeletedThreadID echoes the opaque target so the browser can remove it.
+	DeletedThreadID string `json:"deletedThreadId"`
 }
 
 // StoreOptions provides deterministic clocks and IDs to tests. Production
@@ -132,11 +161,14 @@ type gateway interface {
 // Store performs semantic sidecar reads and mutations through a contained
 // filesystem gateway.
 type Store struct {
+	// filesystem is the only path/filesystem capability available to review
+	// semantics; the store derives sidecar identities from document paths.
 	filesystem gateway
-	now        func() time.Time
-	newID      func(prefix string) (string, error)
-	// mutex serializes all in-process mutations. External writers remain
-	// outside this protocol and are detected only by the one final file check.
+	// now and newID are immutable dependencies after construction.
+	now   func() time.Time
+	newID func(prefix string) (string, error)
+	// mutex serializes all in-process mutations. External writers remain outside
+	// this protocol and are detected only by the filesystem's final file check.
 	mutex sync.Mutex
 }
 
@@ -219,6 +251,8 @@ func (store *Store) CreateThread(
 	ctx context.Context,
 	input CreateThreadInput,
 ) (CreateThreadResult, error) {
+	// IDs and timestamps are allocated before taking the mutation lock so the
+	// lock covers only the read/check/derive/write transaction itself.
 	if err := validateCreateInput(input); err != nil {
 		return CreateThreadResult{}, err
 	}

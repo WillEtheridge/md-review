@@ -18,9 +18,14 @@ import (
 type reviewOperationRoute uint8
 
 const (
+	// reviewOperationUnknown is returned for paths that do not match a fixed
+	// mutation route.
 	reviewOperationUnknown reviewOperationRoute = iota
+	// reviewOperationReply appends a message to the encoded thread ID.
 	reviewOperationReply
+	// reviewOperationStatus changes the encoded thread status.
 	reviewOperationStatus
+	// reviewOperationDelete removes the encoded thread.
 	reviewOperationDelete
 )
 
@@ -164,6 +169,9 @@ func (server *Server) validateMutationRequest(
 	response http.ResponseWriter,
 	request *http.Request,
 ) bool {
+	// GET requests are deliberately less restricted because reads are protected
+	// by the exact Host check. Mutations additionally require this origin and
+	// JSON content type to block cross-site form and fetch submissions.
 	if request.Header.Get("Origin") != "http://"+server.boundHost {
 		server.writeError(response, http.StatusForbidden, "invalidOrigin", "This mutation origin is not allowed.")
 		return false
@@ -239,6 +247,8 @@ func parseReviewOperationRoute(urlPath string) (reviewOperationRoute, string, bo
 }
 
 func decodeRouteID(segment string) (string, bool) {
+	// IDs are encoded as a canonical base64url segment so arbitrary UTF-8 IDs
+	// cannot introduce route separators or alternate decoded spellings.
 	if len(segment) < 2 || segment[0] != '~' {
 		return "", false
 	}
@@ -330,6 +340,8 @@ func decodeMutationJSON(
 	request *http.Request,
 	destination any,
 ) error {
+	// MaxBytesReader bounds the body even when Content-Length is absent or
+	// dishonest; DisallowUnknownFields keeps the browser/API contract strict.
 	request.Body = http.MaxBytesReader(response, request.Body, limits.MaxMutationRequestBodyBytes)
 	decoder := json.NewDecoder(request.Body)
 	decoder.DisallowUnknownFields()
@@ -365,6 +377,8 @@ func decodeNullableRevision(raw json.RawMessage) (*string, error) {
 }
 
 func decodeThreadAnchor(raw json.RawMessage) (review.Anchor, error) {
+	// Decode the discriminator first, then decode the selected shape strictly so
+	// document anchors cannot smuggle text fields and vice versa.
 	if raw == nil {
 		return review.Anchor{}, errors.New("anchor is required")
 	}

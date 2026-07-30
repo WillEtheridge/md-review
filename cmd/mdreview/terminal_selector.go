@@ -20,10 +20,13 @@ const (
 )
 
 type fileDescriptor interface {
+	// Fd exposes the OS descriptor needed by golang.org/x/term to enter raw mode.
 	Fd() uintptr
 }
 
 type selectorOption struct {
+	// target is the protocol value passed to the installer; label is terminal
+	// presentation and must not be parsed back into a target.
 	target skills.Target
 	label  string
 }
@@ -103,6 +106,9 @@ Press Ctrl+C to cancel.`); err != nil {
 
 	inputBytes := make(chan byte, 1)
 	inputErrors := make(chan error, 1)
+	// The reader blocks on the terminal, so it is isolated from cancellation.
+	// The process owns the terminal for this short-lived command and will return
+	// through the deferred raw-mode restoration even when the selector exits.
 	go readSelectorInput(input, inputBytes, inputErrors)
 
 	escapeState := 0

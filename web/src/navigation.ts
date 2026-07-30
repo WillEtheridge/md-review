@@ -1,5 +1,7 @@
 import type { DocumentNode, NavigationNode } from "./api";
 
+// Navigation is copied and transformed in the browser so filtering and user
+// expansion never mutate the server-owned snapshot held by reconciliation.
 function compareText(left: string, right: string): number {
   const foldedLeft = left.toLowerCase();
   const foldedRight = right.toLowerCase();
@@ -25,6 +27,7 @@ function compareNodes(left: NavigationNode, right: NavigationNode): number {
   return compareText(left.name, right.name);
 }
 
+/** Returns a recursively sorted copy with directories before documents. */
 export function orderNavigation(nodes: readonly NavigationNode[]): NavigationNode[] {
   return nodes
     .map((node): NavigationNode =>
@@ -38,10 +41,13 @@ export function orderNavigation(nodes: readonly NavigationNode[]): NavigationNod
     .sort(compareNodes);
 }
 
+/** Returns a recursively filtered copy while preserving matching ancestors. */
 export function filterNavigation(
   nodes: readonly NavigationNode[],
   filter: string
 ): NavigationNode[] {
+  // Keep a directory when any descendant matches; this preserves the path a
+  // user needs to reach a filtered document without expanding unrelated files.
   const foldedFilter = filter.trim().toLowerCase();
   if (foldedFilter.length === 0) {
     return [...nodes];
@@ -67,6 +73,7 @@ export function filterNavigation(
   return result;
 }
 
+/** Finds an indexed document by its slash-relative identity. */
 export function findDocument(
   nodes: readonly NavigationNode[],
   path: string
@@ -86,6 +93,7 @@ export function findDocument(
   return undefined;
 }
 
+/** Collects indexed document identities for renderer link classification. */
 export function documentPaths(nodes: readonly NavigationNode[]): ReadonlySet<string> {
   const paths = new Set<string>();
   const visit = (entries: readonly NavigationNode[]): void => {
@@ -101,7 +109,10 @@ export function documentPaths(nodes: readonly NavigationNode[]): ReadonlySet<str
   return paths;
 }
 
+/** Lists parent directory identities from workspace root toward a document. */
 export function ancestorDirectoryPaths(documentPath: string): string[] {
+  // The result is ordered from the workspace root toward the document so a
+  // caller can expand ancestors in one deterministic pass.
   const segments = documentPath.split("/");
   segments.pop();
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"));

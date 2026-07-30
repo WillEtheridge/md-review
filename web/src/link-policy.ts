@@ -1,3 +1,4 @@
+/** Rendering outcome for one Markdown href after origin and index checks. */
 export type LinkPolicy =
   | {
       kind: "external";
@@ -41,6 +42,8 @@ function resolveRelativePath(
   currentDocumentPath: string,
   relativePath: string
 ): string | undefined {
+  // Resolve only slash-relative Markdown identities. Rejecting traversal above
+  // the workspace root keeps navigation in the server's indexed namespace.
   if (
     relativePath.length === 0 ||
     relativePath.startsWith("/") ||
@@ -71,11 +74,15 @@ function resolveRelativePath(
   return currentParts.join("/");
 }
 
+/** Classifies a Markdown href before it is allowed to become an active link. */
 export function classifyLink(
   rawHref: string,
   currentDocumentPath: string,
   indexedDocumentPaths: ReadonlySet<string>
 ): LinkPolicy {
+  // This policy runs before an href reaches the DOM. A URL can be syntactically
+  // valid yet still be inert when its scheme, path, or target is outside the
+  // small set of links mdReview can safely serve.
   const hasControlCharacter = Array.from(rawHref).some((character) => {
     const codePoint = character.codePointAt(0);
     return codePoint !== undefined && (codePoint < 0x20 || codePoint === 0x7f);

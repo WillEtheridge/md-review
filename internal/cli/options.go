@@ -30,18 +30,31 @@ const (
 type Target string
 
 const (
-	TargetCodex  Target = "codex"
+	// TargetCodex installs the skill in Codex's global skill directory.
+	TargetCodex Target = "codex"
+	// TargetClaude installs the skill in Claude Code's global skill directory.
 	TargetClaude Target = "claude"
-	TargetPi     Target = "pi"
+	// TargetPi installs the skill in Pi's global skill directory.
+	TargetPi Target = "pi"
 )
 
 // Options is one validated mdReview command-line configuration.
 type Options struct {
-	Command      Command
-	Directory    string
-	Port         uint16
+	// Command selects whether this invocation serves a workspace, prints the
+	// version, or manages the optional global Agent Skill installation.
+	Command Command
+	// Directory is the user-selected workspace root for Serve. It is empty for
+	// commands that do not need to open a workspace.
+	Directory string
+	// Port is the requested loopback port. A zero value means that the server
+	// may choose an available port when PortExplicit is false.
+	Port uint16
+	// PortExplicit distinguishes an omitted port from an explicit request for
+	// a port, which is useful to report a bind failure instead of falling back.
 	PortExplicit bool
-	Targets      []Target
+	// Targets contains explicitly selected global skill destinations. The
+	// parser rejects duplicates and never infers a mutation target.
+	Targets []Target
 }
 
 // Parse converts command-line arguments to Options. workingDirectory is called

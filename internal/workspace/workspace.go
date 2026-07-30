@@ -166,6 +166,8 @@ type indexedDocument struct {
 }
 
 type contextMutex struct {
+	// token contains one permit. A channel rather than sync.Mutex lets a
+	// cancelled request stop waiting without spawning an acquisition goroutine.
 	token chan struct{}
 }
 
@@ -195,10 +197,14 @@ const scanFreshness = time.Second
 // Service maintains a request-refreshed workspace index through a
 // caller-owned portable filesystem gateway.
 type Service struct {
+	// gateway remains caller-owned and must outlive Service.
 	gateway *filesystem.FS
-	now     func() time.Time
-	scan    scanFunction
-	scanMu  contextMutex
+	// now is injectable so freshness and failure caching are deterministic in tests.
+	now func() time.Time
+	// scan is the complete candidate builder; it runs outside stateMu.
+	scan scanFunction
+	// scanMu coalesces stale callers into one active traversal.
+	scanMu contextMutex
 
 	// stateMu protects the complete published index, ignore cache, successful
 	// scan time, and last ordinary scan failure. Filesystem scanning happens
@@ -252,7 +258,9 @@ func openWithScanner(
 }
 
 // Snapshot returns an independent copy of the current workspace index. A stale
-// request synchronously drives one coalesced portable metadata scan.
+// request synchronously drives one coalesced portable metadata scan. Requests
+// arriving during that scan wait for the same publication; they do not start
+// competing traversals or receive partially updated maps.
 func (service *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
@@ -345,6 +353,9 @@ func (service *Service) ReadDocument(
 	ctx context.Context,
 	relativePath string,
 ) (DocumentContent, error) {
+	// Index membership is checked before reopening. This prevents a caller from
+	// turning this method into an arbitrary workspace file reader, while the
+	// gateway repeats path and file-kind checks against the current filesystem.
 	if err := ctx.Err(); err != nil {
 		return DocumentContent{}, err
 	}

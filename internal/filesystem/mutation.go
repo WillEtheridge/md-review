@@ -16,29 +16,52 @@ import (
 
 // MutationOptions bounds replacement file content.
 type MutationOptions struct {
+	// MaxBytes is the maximum size of both the existing input and replacement
+	// output. The limit is enforced with a bounded read, not metadata alone.
 	MaxBytes int64
 }
 
-// MutationCallback derives complete replacement bytes from current content.
+// MutationCallback derives complete replacement bytes from a snapshot of the
+// current file. The callback must not mutate the filesystem itself; MutateFile
+// performs the final unchanged check and atomic replacement around it.
 type MutationCallback func(currentBytes []byte, exists bool) ([]byte, error)
 
 var (
-	ErrMutationConflict       = errors.New("file kept changing during mutation")
-	ErrUnsafeMutationTarget   = errors.New("unsafe file mutation target")
-	ErrMutationTooLarge       = errors.New("file mutation exceeds content limit")
-	ErrMutationIO             = errors.New("file mutation I/O failure")
+	// ErrMutationConflict means the target changed between the callback's input
+	// snapshot and the final pre-rename check, so no replacement was applied.
+	ErrMutationConflict = errors.New("file kept changing during mutation")
+	// ErrUnsafeMutationTarget means the destination or one of its parents is a
+	// symlink, special file, or otherwise outside the portable gateway contract.
+	ErrUnsafeMutationTarget = errors.New("unsafe file mutation target")
+	// ErrMutationTooLarge means the existing or emitted replacement exceeds the
+	// configured mutation limit.
+	ErrMutationTooLarge = errors.New("file mutation exceeds content limit")
+	// ErrMutationIO wraps ordinary failures opening, writing, syncing, or
+	// replacing the target.
+	ErrMutationIO = errors.New("file mutation I/O failure")
+	// ErrInvalidMutationOptions means the limit or replacement callback is not
+	// usable for a bounded mutation.
 	ErrInvalidMutationOptions = errors.New("invalid file mutation options")
 )
 
 type mutationState struct {
-	data        []byte
-	exists      bool
+	// data is the exact bounded bytes used for the final conflict comparison.
+	data []byte
+	// exists distinguishes a missing target from an empty regular file.
+	exists bool
+	// permissions are copied to a replacement so a sidecar rewrite does not
+	// silently change the existing file mode.
 	permissions os.FileMode
 }
 
-// MutateFile writes, syncs, and closes a temporary sibling before atomically
-// renaming it over relativePath. There is deliberately no directory sync or
-// power-loss durability classification.
+// MutateFile derives and atomically installs a complete replacement for one
+// slash-relative file. It reads the current file, invokes callback, writes a
+// random temporary sibling with the original permissions, syncs and closes
+// that sibling, re-reads the target, and renames only if the target is byte-for-
+// byte unchanged. The final check protects cooperating callers; an external
+// same-user writer can still replace the target after that check and before
+// rename. There is deliberately no directory sync or power-loss durability
+// classification.
 func (filesystem *FS) MutateFile(
 	ctx context.Context,
 	relativePath string,
@@ -83,6 +106,8 @@ func (filesystem *FS) MutateFile(
 	if err != nil {
 		return nil, classifyMutationError("read current file", err)
 	}
+	// Give the callback an owned copy: it may derive bytes freely, but cannot
+	// mutate the snapshot that the final conflict check compares.
 	updated, err := callback(append([]byte(nil), before.data...), before.exists)
 	if err != nil {
 		return nil, err
@@ -146,8 +171,9 @@ func (filesystem *FS) MutateFile(
 		return nil, err
 	}
 
-	// External writers do not share this protocol, so a replacement after
-	// this exact check and before rename can still be overwritten.
+	// External writers do not share this protocol, so a replacement after this
+	// exact check and before rename can still be overwritten. The local security
+	// model does not claim to close that residual same-user race.
 	if hook := filesystem.hooks.mutation.afterFinalCheck; hook != nil {
 		hook(1)
 	}
@@ -173,6 +199,9 @@ func (filesystem *FS) readMutationTarget(
 	relativePath string,
 	maxBytes int64,
 ) (mutationState, error) {
+	// Lstat establishes the safety and size preconditions without following a
+	// symlink; Stat on the opened descriptor repeats the regular-file check after
+	// the open race window.
 	info, err := os.Lstat(targetPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):

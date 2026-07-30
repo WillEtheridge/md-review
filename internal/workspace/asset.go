@@ -59,6 +59,9 @@ func (service *Service) ReadAsset(
 	reference string,
 	visit func(io.Reader, int64) error,
 ) error {
+	// Asset references are validated here, after the Markdown renderer has
+	// identified a relative image, so the HTTP layer never constructs or
+	// inspects an operating-system path.
 	if err := ctx.Err(); err != nil {
 		return err
 	}

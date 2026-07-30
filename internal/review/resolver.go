@@ -24,6 +24,9 @@ func ResolveAnchor(markdown []byte, anchor Anchor) Attachment {
 		return attached(start, end)
 	}
 
+	// If the original range no longer matches, allow reattachment only when the
+	// exact source occurs once. A repeated match would require guessing which
+	// occurrence the reviewer meant, so it remains detached.
 	source := []byte(anchor.Source)
 	first := bytes.Index(markdown, source)
 	if first < 0 {

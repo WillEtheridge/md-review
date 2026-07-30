@@ -73,40 +73,64 @@ const (
 
 // ByteRange is a zero-based, half-open UTF-8 byte range.
 type ByteRange struct {
+	// Start is the inclusive UTF-8 byte offset in the original Markdown.
 	Start uint64 `json:"start"`
-	End   uint64 `json:"end"`
+	// End is the exclusive UTF-8 byte offset. End-Start must equal the byte
+	// length of the persisted Source for a valid text anchor.
+	End uint64 `json:"end"`
 }
 
 // Anchor is the immutable persisted location and selected content of a thread.
 // Range, Source, and Text are present only for text anchors.
 type Anchor struct {
-	Type   AnchorType `json:"type"`
-	Range  *ByteRange `json:"range,omitempty"`
-	Source string     `json:"source,omitempty"`
-	Text   string     `json:"text,omitempty"`
+	// Type selects whether this thread applies to the whole document or a text
+	// range. The remaining fields are meaningful only for AnchorText.
+	Type AnchorType `json:"type"`
+	// Range is the original zero-based half-open byte range, never rewritten
+	// when the current document changes.
+	Range *ByteRange `json:"range,omitempty"`
+	// Source is the exact UTF-8 Markdown bytes selected when the thread was made.
+	Source string `json:"source,omitempty"`
+	// Text is the rendered text shown to the reviewer; it may differ from Source
+	// because Markdown syntax is not always visible.
+	Text string `json:"text,omitempty"`
 }
 
 // Author is the presentation-only author recorded on a review message.
 type Author struct {
+	// Type is the protocol identity recorded for display, not an authorization
+	// decision.
 	Type string `json:"type"`
+	// Name is presentation text persisted with the message.
 	Name string `json:"name"`
 }
 
 // Message is one persisted review message.
 type Message struct {
-	ID        string  `json:"id"`
-	Author    Author  `json:"author"`
-	Body      string  `json:"body"`
-	CreatedAt string  `json:"createdAt"`
-	EditedAt  *string `json:"editedAt,omitempty"`
+	// ID is unique within the sidecar's thread/message namespace.
+	ID string `json:"id"`
+	// Author identifies the recorded writer; messages are append-only in v0.2.
+	Author Author `json:"author"`
+	// Body is UTF-8 Markdown rendered by the browser's restricted message renderer.
+	Body string `json:"body"`
+	// CreatedAt is an RFC3339 timestamp normalized to UTC.
+	CreatedAt string `json:"createdAt"`
+	// EditedAt remains schema-compatible even though human message editing is
+	// not part of the current workflow.
+	EditedAt *string `json:"editedAt,omitempty"`
 }
 
 // Thread is one persisted review conversation.
 type Thread struct {
-	ID       string       `json:"id"`
-	Anchor   Anchor       `json:"anchor"`
-	Status   ThreadStatus `json:"status"`
-	Messages []Message    `json:"messages"`
+	// ID identifies the conversation and is the target used by mutations.
+	ID string `json:"id"`
+	// Anchor is immutable conversation context; attachment is calculated later.
+	Anchor Anchor `json:"anchor"`
+	// Status controls the human review workflow. Agents may report handled but
+	// cannot mark a thread resolved.
+	Status ThreadStatus `json:"status"`
+	// Messages is append-only and must contain at least the opening message.
+	Messages []Message `json:"messages"`
 }
 
 // AttachmentState describes a calculated anchor state that is never persisted.
@@ -125,14 +149,21 @@ const (
 
 // Attachment is the current calculated location of a persisted anchor.
 type Attachment struct {
-	State        AttachmentState `json:"state"`
-	CurrentRange *ByteRange      `json:"currentRange,omitempty"`
+	// State distinguishes document anchors, uniquely attached text anchors, and
+	// text anchors that cannot be placed without guessing.
+	State AttachmentState `json:"state"`
+	// CurrentRange is present only when a text anchor is attached to the current
+	// Markdown bytes; it is never persisted back into the original Anchor.
+	CurrentRange *ByteRange `json:"currentRange,omitempty"`
 }
 
 // ResolvedThread combines persisted thread data with its calculated attachment.
 type ResolvedThread struct {
-	ID         string       `json:"id"`
-	Anchor     Anchor       `json:"anchor"`
+	// ID, Anchor, Status, and Messages are validated persisted data copied out of
+	// the sidecar.
+	ID     string `json:"id"`
+	Anchor Anchor `json:"anchor"`
+	// Attachment is calculated against the Markdown supplied to ResolvedThreads.
 	Attachment Attachment   `json:"attachment"`
 	Status     ThreadStatus `json:"status"`
 	Messages   []Message    `json:"messages"`
@@ -178,6 +209,9 @@ var ownedJSONFieldNames = []string{
 
 // Decode validates one complete schema-version-1 sidecar.
 func Decode(data []byte) (*Document, error) {
+	// Validate in two passes: preflight catches duplicate or case-variant field
+	// names that encoding/json would otherwise silently collapse, then the typed
+	// decoder enforces the owned version-1 schema and rejects unknown fields.
 	if int64(len(data)) > limits.MaxReviewSidecarBytes {
 		return nil, ErrTooLarge
 	}
@@ -295,6 +329,8 @@ func (document *Document) Bytes() ([]byte, error) {
 	if int64(len(result)) > limits.MaxReviewSidecarBytes {
 		return nil, ErrTooLarge
 	}
+	// Re-decode emitted bytes before returning them. This keeps the writer's
+	// output on the same validation path as files read from disk.
 	if _, err := Decode(result); err != nil {
 		return nil, fmt.Errorf("validate emitted sidecar: %w", err)
 	}
@@ -302,6 +338,8 @@ func (document *Document) Bytes() ([]byte, error) {
 }
 
 func preflightJSON(data []byte) error {
+	// encoding/json accepts the last duplicate object member. Sidecar fields are
+	// security and concurrency inputs, so ambiguity is rejected before decoding.
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	if err := preflightValue(decoder); err != nil {
 		return err

@@ -26,11 +26,17 @@ import (
 )
 
 const (
-	defaultPort     = 4242
+	// defaultPort is the convenient first choice when the caller did not pin a
+	// port. A bind failure falls back to an OS-assigned loopback port.
+	defaultPort = 4242
+	// shutdownTimeout bounds graceful HTTP draining after the foreground
+	// process receives its termination signal.
 	shutdownTimeout = 5 * time.Second
 )
 
 type embeddedApplication struct {
+	// web and skill are loaded once so the serving process never depends on
+	// files outside its release binary after startup.
 	web   fs.FS
 	skill []byte
 }
@@ -92,6 +98,9 @@ func runServe(
 	options cli.Options,
 	output io.Writer,
 ) (returnErr error) {
+	// Resource ownership is intentionally nested here: the command opens the
+	// gateway, listener, index, and server, then closes them in reverse order
+	// when this one foreground invocation ends.
 	gateway, err := filesystem.Open(options.Directory)
 	if err != nil {
 		return fmt.Errorf("open workspace filesystem: %w", err)
@@ -138,6 +147,8 @@ func runServe(
 		MaxHeaderBytes:    16 * 1024,
 	}
 	serveErrors := make(chan error, 1)
+	// Serve runs in one owned goroutine so the foreground select can react to a
+	// signal while still reporting an unexpected listener failure.
 	go func() {
 		serveErrors <- httpServer.Serve(listener)
 	}()

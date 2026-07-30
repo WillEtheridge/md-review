@@ -20,29 +20,44 @@ import (
 type DirectoryEntryKind uint8
 
 const (
+	// DirectoryEntryRegular identifies a regular file that can be read.
 	DirectoryEntryRegular DirectoryEntryKind = iota
+	// DirectoryEntryDirectory identifies a directory that can be traversed.
 	DirectoryEntryDirectory
+	// DirectoryEntrySymlink identifies a symbolic link, which the gateway never follows.
 	DirectoryEntrySymlink
+	// DirectoryEntrySpecial identifies a device, socket, FIFO, or other non-regular entry.
 	DirectoryEntrySpecial
+	// DirectoryEntryUnavailable identifies an entry whose metadata could not be read.
 	DirectoryEntryUnavailable
 )
 
 // MetadataSignature is a portable change hint. RelativePath is included so
 // moving a same-size file with a preserved timestamp changes the signature.
 type MetadataSignature struct {
-	RelativePath         string
-	Kind                 DirectoryEntryKind
-	SizeBytes            int64
+	// RelativePath makes the signature sensitive to moves between same-sized
+	// files with preserved timestamps.
+	RelativePath string
+	// Kind is observed without following symbolic links.
+	Kind DirectoryEntryKind
+	// SizeBytes is the metadata size at scan time.
+	SizeBytes int64
+	// ModificationUnixNano is the portable timestamp component of the hint.
 	ModificationUnixNano int64
 }
 
 // DirectoryEntry describes one child without following symbolic links.
 type DirectoryEntry struct {
-	Name      string
-	Kind      DirectoryEntryKind
+	// Name is the single child component, never a slash-relative path.
+	Name string
+	// Kind classifies the child without following symbolic links.
+	Kind DirectoryEntryKind
+	// SizeBytes is populated for regular files and may be zero for other kinds.
 	SizeBytes int64
-	Metadata  MetadataSignature
-	Err       error
+	// Metadata is the signature used by workspace polling and ignore caching.
+	Metadata MetadataSignature
+	// Err preserves a metadata-read failure for unavailable entries.
+	Err error
 }
 
 // Directory is a short-lived directory view supplied during a workspace scan.
@@ -52,12 +67,18 @@ type Directory struct {
 }
 
 var (
+	// ErrInvalidRelativePath reports a path that is not a canonical slash-relative identity.
 	ErrInvalidRelativePath = errors.New("invalid relative path")
-	ErrNotRegular          = errors.New("not a regular file")
-	ErrNotDirectory        = errors.New("not a directory")
-	ErrSymlink             = errors.New("symlink is not allowed")
-	ErrTooLarge            = errors.New("file exceeds content limit")
-	ErrClosed              = errors.New("filesystem gateway is closed")
+	// ErrNotRegular reports an attempt to read or replace a non-regular file.
+	ErrNotRegular = errors.New("not a regular file")
+	// ErrNotDirectory reports an attempt to traverse a non-directory path component.
+	ErrNotDirectory = errors.New("not a directory")
+	// ErrSymlink reports a path containing a symbolic link. Symlink traversal is never allowed.
+	ErrSymlink = errors.New("symlink is not allowed")
+	// ErrTooLarge reports content that exceeds the caller's explicit byte limit.
+	ErrTooLarge = errors.New("file exceeds content limit")
+	// ErrClosed reports use of a gateway after Close has begun or completed.
+	ErrClosed = errors.New("filesystem gateway is closed")
 )
 
 type mutationHooks struct {
@@ -76,13 +97,20 @@ type hooks struct {
 
 // FS owns the canonical workspace path and coordinates Close with operations.
 type FS struct {
-	mu     sync.RWMutex
+	// mu keeps Close from racing operations and keeps all gateway calls inside
+	// the lifetime of the canonical root.
+	mu sync.RWMutex
+	// closed is protected by mu and becomes permanent once Close is called.
 	closed bool
-	root   string
-	hooks  hooks
+	// root is canonical and absolute; callers never receive child OS paths.
+	root string
+	// hooks are test-only synchronization points and are nil in production.
+	hooks hooks
 }
 
-// Open canonicalises root.
+// Open canonicalises root and verifies that it is a real directory. The
+// canonical root is the only operating-system path retained by FS; callers
+// subsequently address entries by slash-relative identities.
 func Open(root string) (*FS, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
@@ -105,7 +133,8 @@ func Open(root string) (*FS, error) {
 	return &FS{root: filepath.Clean(canonical)}, nil
 }
 
-// Close prevents future operations. Repeated calls return nil.
+// Close prevents future operations and waits for in-flight operations to
+// release their read lock. Repeated calls return nil.
 func (filesystem *FS) Close() error {
 	filesystem.mu.Lock()
 	defer filesystem.mu.Unlock()
@@ -113,12 +142,15 @@ func (filesystem *FS) Close() error {
 	return nil
 }
 
-// Root returns the canonical absolute workspace root.
+// Root returns the canonical absolute workspace root. Higher layers should
+// use this only for display; they must not reconstruct child paths themselves.
 func (filesystem *FS) Root() string {
 	return filesystem.root
 }
 
-// ValidateRelativePath rejects empty, absolute, and non-canonical slash paths.
+// ValidateRelativePath rejects empty, absolute, traversal-containing, and
+// platform-dependent paths. A valid value is a slash-separated identity, not
+// an operating-system path and not a promise that the entry currently exists.
 func ValidateRelativePath(relativePath string) error {
 	if relativePath == "" ||
 		strings.ContainsRune(relativePath, '\x00') ||
@@ -342,6 +374,8 @@ func (filesystem *FS) checkedDirectory(relativePath string) (string, error) {
 }
 
 func (filesystem *FS) checkedPath(relativePath string, wantDirectory bool) (string, error) {
+	// Walk every component with Lstat rather than evaluating the final path in
+	// one call. This rejects symlinks in parents as well as at the destination.
 	if err := ValidateRelativePath(relativePath); err != nil {
 		return "", err
 	}
@@ -374,6 +408,8 @@ func (filesystem *FS) beforeOpen(relativePath string) {
 }
 
 func readBounded(reader io.Reader, maxBytes int64) ([]byte, error) {
+	// Read one byte beyond the limit so a stream with missing or stale metadata
+	// cannot silently truncate into an apparently valid result.
 	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
 	if err != nil {
 		return nil, err

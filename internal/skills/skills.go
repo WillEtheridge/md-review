@@ -13,66 +13,93 @@ import (
 type Target string
 
 const (
-	TargetCodex  Target = "codex"
+	// TargetCodex is the global Codex skill destination.
+	TargetCodex Target = "codex"
+	// TargetClaude is the global Claude Code skill destination.
 	TargetClaude Target = "claude"
-	TargetPi     Target = "pi"
+	// TargetPi is the global Pi skill destination.
+	TargetPi Target = "pi"
 )
 
 // State reports only whether the target file is installed.
 type State string
 
 const (
+	// StateNotInstalled means the target SKILL.md does not exist.
 	StateNotInstalled State = "not-installed"
-	StateInstalled    State = "installed"
+	// StateInstalled means the target SKILL.md exists; its contents are not
+	// compared because status is intentionally presence-only.
+	StateInstalled State = "installed"
 )
 
 // Action describes one completed target operation.
 type Action string
 
 const (
+	// ActionInstalled means the target file was written during this operation.
 	ActionInstalled Action = "installed"
-	ActionRemoved   Action = "removed"
+	// ActionRemoved means the target file was deleted during this operation.
+	ActionRemoved Action = "removed"
+	// ActionUnchanged means uninstall found no target file to remove.
 	ActionUnchanged Action = "unchanged"
 )
 
 // InstallRequest authorizes replacing exactly one target SKILL.md.
 type InstallRequest struct {
+	// Target is intentionally explicit; installation never chooses a default
+	// agent destination on the caller's behalf.
 	Target Target
 }
 
 // TargetStatus reports one global target.
 type TargetStatus struct {
+	// Target identifies the configured global destination.
 	Target Target
-	Path   string
-	State  State
+	// Path is the absolute user-facing destination path.
+	Path string
+	// State reports presence only and does not inspect file contents.
+	State State
 }
 
 // Snapshot is the complete read-only installer status.
 type Snapshot struct {
+	// Targets is stable in the product's Codex, Claude Code, Pi order.
 	Targets []TargetStatus
 }
 
 // Change reports one target-level mutation outcome.
 type Change struct {
+	// Target identifies the destination affected by this result.
 	Target Target
+	// Action distinguishes an actual write, removal, or no-op.
 	Action Action
-	State  State
-	Path   string
+	// State is the resulting presence state after the action.
+	State State
+	// Path is the absolute destination path reported to the terminal.
+	Path string
 }
 
 // Result reports completed target mutations.
 type Result struct {
+	// Changes contains completed operations in request order. A returned error
+	// may accompany a partial prefix when a later target fails.
 	Changes []Change
 }
 
 // Config supplies one isolated installer environment.
 type Config struct {
+	// HomeDirectory is the absolute current user's home; it is injected to keep
+	// target path derivation deterministic and testable.
 	HomeDirectory string
-	Skill         []byte
+	// Skill is copied at construction so later caller mutations cannot alter an
+	// installation in progress.
+	Skill []byte
 }
 
 // Manager owns direct target file operations.
 type Manager struct {
+	// homeDirectory and skill are immutable after construction. No process-wide
+	// registry or daemon coordinates installations between invocations.
 	homeDirectory string
 	skill         []byte
 }

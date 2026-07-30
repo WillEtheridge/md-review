@@ -7,10 +7,13 @@ interface VisibleToken {
 }
 
 interface AlignmentOptions {
+  /** Decode Markdown escapes and entities before aligning rendered text. */
   decodeMarkdown?: boolean;
+  /** Treat source line endings as the single spaces rendered by inline code. */
   normaliseLineEndingsToSpace?: boolean;
 }
 
+/** Rendered-to-source UTF-16 boundary map, or an explanation of divergence. */
 export interface BoundaryAlignment {
   boundaries: Array<number | null>;
   error?: string;
@@ -118,6 +121,9 @@ function setBoundary(
   renderedOffset: number,
   sourceOffset: number
 ): void {
+  // Multiple source tokens can produce the same rendered boundary (or a parser
+  // can synthesize text). Nulling the boundary prevents the caller from making
+  // a false precision claim about the authored range.
   const existing = boundaries[renderedOffset];
   if (existing === undefined) {
     boundaries[renderedOffset] = sourceOffset;
@@ -126,12 +132,20 @@ function setBoundary(
   }
 }
 
+/**
+ * Aligns parser-rendered text with its authored source span. Returns null
+ * boundaries where normalization is not one-to-one and an error when the
+ * renderer diverges from the source slice.
+ */
 export function alignRenderedText(
   raw: string,
   rendered: string,
   absoluteSourceStart: number,
   options: AlignmentOptions = { decodeMarkdown: true }
 ): BoundaryAlignment {
+  // Alignment is intentionally prefix-driven rather than a fuzzy diff. A
+  // fuzzy match could attach a comment to different source bytes after parser
+  // normalization, so divergence rejects the whole leaf.
   const tokens = rawTokens(raw, options);
   const boundaries = Array<number | null | undefined>(rendered.length + 1);
   let renderedOffset = 0;
@@ -169,6 +183,7 @@ export function alignRenderedText(
   };
 }
 
+/** Returns the authored content span represented by one inline-code element. */
 export function inlineCodeContentSpan(
   source: string,
   sourceStart: number,
@@ -205,6 +220,7 @@ export function inlineCodeContentSpan(
   };
 }
 
+/** Returns the authored body span represented by one fenced code element. */
 export function fencedCodeContentSpan(
   source: string,
   sourceStart: number,
@@ -237,7 +253,11 @@ export function fencedCodeContentSpan(
   };
 }
 
+/** Converts an exact JavaScript UTF-16 source boundary to a UTF-8 byte offset. */
 export function utf16OffsetToUtf8(source: string, offset: number): number {
+  // DOM Range offsets count UTF-16 code units; sidecar anchors count UTF-8
+  // bytes. Rejecting surrogate interiors keeps both representations on code
+  // point boundaries instead of silently rounding a user selection.
   if (offset < 0 || offset > source.length) {
     throw new RangeError("UTF-16 offset is outside the source");
   }
@@ -254,7 +274,11 @@ export function utf16OffsetToUtf8(source: string, offset: number): number {
   return new TextEncoder().encode(source.slice(0, offset)).length;
 }
 
+/** Converts an exact UTF-8 byte boundary to a JavaScript UTF-16 source offset. */
 export function utf8OffsetToUtf16(source: string, byteOffset: number): number {
+  // Walk complete Unicode code points until the exact byte boundary is reached.
+  // A partial code point is invalid even if it would be possible to slice the
+  // JavaScript string at a nearby UTF-16 index.
   if (byteOffset < 0) {
     throw new RangeError("UTF-8 offset is outside the source");
   }

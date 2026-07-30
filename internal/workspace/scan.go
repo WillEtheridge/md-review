@@ -12,16 +12,23 @@ import (
 )
 
 type cachedIgnoreFile struct {
+	// signature identifies the metadata observation that produced rules.
 	signature filesystem.MetadataSignature
-	rules     ignoreRules
-	warning   *Warning
+	// rules are scoped to the directory containing the ignore file.
+	rules ignoreRules
+	// warning is retained so repeated scans report the same unsafe input
+	// deterministically until its signature changes.
+	warning *Warning
 }
 
 type ignoreFileCache map[string]cachedIgnoreFile
 
 type scanResult struct {
-	snapshot    Snapshot
-	documents   map[string]indexedDocument
+	// snapshot is the caller-facing immutable view assembled from the maps below.
+	snapshot Snapshot
+	// documents is the private lookup index used to reopen only indexed Markdown.
+	documents map[string]indexedDocument
+	// ignoreFiles is carried into the next scan to preserve parsed-rule reuse.
 	ignoreFiles ignoreFileCache
 }
 
@@ -38,11 +45,17 @@ type ignoreFileReader func(
 ) ([]byte, error)
 
 type scanner struct {
-	documents           map[string]indexedDocument
-	warnings            []Warning
+	// documents and warnings are built during one traversal and become part of
+	// the candidate snapshot only after the traversal returns successfully.
+	documents map[string]indexedDocument
+	warnings  []Warning
+	// previousIgnoreFiles is read-only input from the last published scan.
 	previousIgnoreFiles ignoreFileCache
-	ignoreFiles         ignoreFileCache
-	readIgnoreFile      ignoreFileReader
+	// ignoreFiles contains signatures and parsed rules for this candidate scan.
+	ignoreFiles ignoreFileCache
+	// readIgnoreFile is injected so tests can exercise cache and failure paths
+	// without replacing the production filesystem gateway.
+	readIgnoreFile ignoreFileReader
 }
 
 func scanWorkspace(
@@ -70,6 +83,8 @@ func scanWorkspaceWithIgnoreReader(
 	previousIgnoreFiles ignoreFileCache,
 	readIgnoreFile ignoreFileReader,
 ) (scanResult, error) {
+	// Build a complete candidate off to the side. Service publishes it only
+	// after traversal succeeds, so readers never observe a half-scan.
 	currentScanner := &scanner{
 		documents:           make(map[string]indexedDocument),
 		previousIgnoreFiles: previousIgnoreFiles,
@@ -114,6 +129,8 @@ func (scanner *scanner) scanDirectory(
 	directory *filesystem.Directory,
 	inherited ignoreMatcher,
 ) ([]NavigationEntry, error) {
+	// Directory recursion carries the inherited Git-ignore matcher downward;
+	// each child may extend it with a local .gitignore before matching entries.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

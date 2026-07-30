@@ -13,9 +13,16 @@ import type { RenderModel } from "./markdown/types";
 import { MessageMarkdown } from "./message-markdown";
 import { orderTextThreads } from "./review-order";
 
+// Review owns the browser half of the comment workflow: it maps selections to
+// persisted anchors, renders attachment highlights, and keeps reply/status
+// editors local while App owns transport and document reconciliation.
+
+/** Maximum authored UTF-8 source bytes permitted in one text anchor. */
 export const MAX_ANCHOR_SOURCE_BYTES = 1024 * 1024;
+/** Maximum UTF-8 bytes permitted in one persisted message body. */
 export const MAX_MESSAGE_BODY_BYTES = 64 * 1024;
 
+/** Review data that is either renderable or blocked with a user-facing reason. */
 export type ReviewLoad =
   | {
       status: "ready";
@@ -29,15 +36,23 @@ export type ReviewLoad =
     };
 
 export interface ReviewComposer {
+  /** Document-wide or exact text-anchor creation mode. */
   kind: "document" | "text";
+  /** Frozen selection retained while a text comment is being composed. */
   anchor?: TextThreadAnchor;
+  /** Draft is kept across validation, conflict, and transport failures. */
   draft: string;
+  /** Prevents duplicate submission while the server mutation is in flight. */
   submitting: boolean;
+  /** Local validation or transport message shown beside the draft. */
   error: string | null;
+  /** Revisions returned by a stale-write response, when available. */
   conflict: CurrentRevisions | null;
 }
 
 interface HighlightRectangle {
+  // Coordinates are relative to the document stage, not the viewport. They are
+  // recalculated after layout changes because a DOM Range has no stable box.
   threadId: string;
   left: number;
   top: number;
@@ -64,6 +79,8 @@ function textThread(thread: ReviewThread): thread is TextReviewThread {
 }
 
 function candidatePosition(range: Range, stage: HTMLElement): { left: number; top: number } {
+  // The action affordance is positioned from the visible selection rectangle,
+  // with a small stage-relative inset so it remains inside the review surface.
   const rangeRect = range.getBoundingClientRect();
   const stageRect = stage.getBoundingClientRect();
   return {
@@ -104,6 +121,8 @@ export function ReviewedDocument({
   onActiveThread: (threadId: string) => void;
   onStartTextComment: (anchor: TextThreadAnchor) => void;
 }) {
+  // Highlights are presentation-only. Persisted anchors remain byte ranges;
+  // these rectangles are disposable geometry derived from the current render.
   const stage = useRef<HTMLDivElement>(null);
   const documentRoot = useRef<HTMLElement>(null);
   const [rectangles, setRectangles] = useState<HighlightRectangle[]>([]);
@@ -130,6 +149,8 @@ export function ReviewedDocument({
 
     let frame = 0;
     const update = (): void => {
+      // Measure after layout and coalesce resize bursts into one frame. This avoids
+      // painting stale highlight positions during font or panel-size changes.
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const stageRect = stageElement.getBoundingClientRect();
@@ -198,6 +219,8 @@ export function ReviewedDocument({
     if (!thread || thread.attachment.state !== "attached") {
       return;
     }
+    // Scrolling uses a restored range rather than stored geometry, so the target
+    // remains correct after reflow, zoom, or a responsive panel change.
     const currentRange = thread.attachment.currentRange;
     const frame = requestAnimationFrame(() => {
       const range = restoreDomRange(currentRange, root, model);
@@ -220,6 +243,8 @@ export function ReviewedDocument({
       return;
     }
 
+    // Selection inspection is disabled while a composer is open: the selection is
+    // frozen as the draft's anchor and should not be replaced by later events.
     let frame = 0;
     const inspect = (): void => {
       cancelAnimationFrame(frame);
@@ -236,6 +261,8 @@ export function ReviewedDocument({
         }
 
         const position = candidatePosition(range, stageElement);
+        // Mapping failures become actionable UI text; they are not silently turned
+        // into approximate anchors.
         const mapping = mapDomRange(range, root, model);
         if (mapping.decision === "reject") {
           if (mapping.reason === "empty-selection") {
@@ -285,6 +312,8 @@ export function ReviewedDocument({
   }, [composer, model, review.status]);
 
   const handleDocumentClick = (event: MouseEvent): void => {
+    // Clicking an overlapping highlight cycles through matching thread IDs. A
+    // draft highlight is excluded because it is not yet a persisted thread.
     if (
       (event.target as Element | null)?.closest(".selection-action") ||
       !window.getSelection()?.isCollapsed
@@ -382,6 +411,8 @@ export function ReviewedDocument({
 }
 
 export type ReviewOperation =
+  // Each operation carries the revisions captured when its editor opened. The
+  // server can therefore reject stale writes without losing the local draft.
   | {
       kind: "reply";
       threadId: string;
@@ -404,6 +435,9 @@ export type ReviewOperation =
     };
 
 interface OperationEditor {
+  // The editor captures revisions at open time, just like the creation composer.
+  // A later external change therefore fails safely instead of replying to a
+  // thread the user is no longer viewing.
   threadId: string;
   expectedDocumentRevision: string;
   expectedReviewRevision: string;
@@ -413,6 +447,8 @@ interface OperationEditor {
 }
 
 interface StatusFilters {
+  // Filters affect visibility only; hidden threads and drafts remain in the
+  // loaded review state and can reappear without a refetch.
   open: boolean;
   handled: boolean;
   resolved: boolean;
@@ -423,6 +459,8 @@ function statusLabel(status: ThreadStatus): string {
 }
 
 function boundedThreadName(value: string): string {
+  // Thread labels are derived from authored text, so normalize whitespace and
+  // cap length before using one as a focus and accessible-name target.
   const normalised = value.replace(/\s+/gu, " ").trim() || "Untitled comment";
   const characters = Array.from(normalised);
   return characters.length <= 96 ? normalised : `${characters.slice(0, 95).join("")}…`;
@@ -500,6 +538,8 @@ function MessageComposer({
   onCancel: () => void;
   children?: preact.ComponentChildren;
 }) {
+  // The server limit is measured in UTF-8 bytes, not JavaScript string length,
+  // so emoji and non-ASCII comments receive the same contract as Go validation.
   const bodyBytes = new TextEncoder().encode(draft).length;
   const empty = draft.trim().length === 0;
   const tooLarge = bodyBytes > MAX_MESSAGE_BODY_BYTES;
@@ -590,6 +630,8 @@ function OverflowMenu({
     if (!open) {
       return;
     }
+    // The document listeners are scoped to the open state and always removed;
+    // otherwise every rendered thread would accumulate global handlers.
     const closeOnPointerDown = (event: PointerEvent): void => {
       if (!root.current?.contains(event.target as Node)) {
         close();
@@ -671,6 +713,9 @@ function ThreadCard({
   onEditorSubmit: () => void;
   onEditorCancel: () => void;
 }) {
+  // ThreadCard exposes only operations allowed by the workflow: replies are
+  // append-only, resolved threads can reopen, and deletion is limited to a
+  // thread with its opening message only.
   const rawLabel =
     thread.anchor.type === "document"
       ? "Document comment"
@@ -936,6 +981,8 @@ export function ReviewPanel({
   onOperation: (operation: ReviewOperation) => Promise<void>;
   onEditorActiveChange: (active: boolean) => void;
 }) {
+  // The panel owns filter, pending-operation, and focus restoration state. App
+  // owns the document/review revisions and supplies the transport callbacks.
   const [filters, setFilters] = useState<StatusFilters>({
     open: true,
     handled: true,
@@ -975,6 +1022,8 @@ export function ReviewPanel({
     composer && review?.status === "error" ? `${review.title}. ${review.message}` : null;
 
   useEffect(() => {
+    // Moving documents invalidates a reply editor's thread target, but the draft
+    // is deliberately kept by App only for the top-level creation composer.
     if (editorDocumentPathRef.current === documentPath) {
       return;
     }

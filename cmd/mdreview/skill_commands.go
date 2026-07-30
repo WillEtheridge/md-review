@@ -11,6 +11,8 @@ import (
 )
 
 type skillManager interface {
+	// The command layer depends on the small operation surface rather than the
+	// concrete installer, which keeps terminal interaction and output testable.
 	Status() (skills.Snapshot, error)
 	Install([]skills.InstallRequest) (skills.Result, error)
 	Uninstall([]skills.Target) (skills.Result, error)
@@ -48,6 +50,8 @@ func runSkillManagementWith(
 	inputIsTerminal bool,
 	manager skillManager,
 ) error {
+	// The non-interactive flag is passed through for setup validation; explicit
+	// install and uninstall commands remain usable in scripts and tests.
 	_ = inputIsTerminal
 	switch options.Command {
 	case cli.Setup:

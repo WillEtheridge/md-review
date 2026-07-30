@@ -39,6 +39,12 @@ import {
 import { PollCoordinator, browserPollClock, browserVisibilitySource } from "./polling";
 import { applyThemeMode, browserThemeStorage, persistThemeMode, type ThemeMode } from "./theme";
 
+// App coordinates three independently changing resources: the workspace
+// index, one loaded Markdown document, and its adjacent review sidecar. Draft
+// state stays in the session while polling reconciles disk metadata, so an
+// external edit cannot silently discard text being composed.
+
+/** Workspace index lifecycle; loading and error retain no stale navigation. */
 type WorkspaceView =
   | {
       status: "loading";
@@ -52,6 +58,10 @@ type WorkspaceView =
       reason: "unavailable";
     };
 
+/**
+ * Document lifecycle. The ready variant carries one coherent Markdown model,
+ * its source revision, scan metadata, and review snapshot.
+ */
 type DocumentView =
   | {
       status: "idle";
@@ -74,17 +84,23 @@ type DocumentView =
     };
 
 interface PendingDocumentChange {
+  // A pending change is metadata-only. The old render and any draft remain
+  // visible until the user finishes or discards the comment.
   path: string;
   documentMetadataRevision: string | null;
 }
 
 interface AttemptedMetadata {
+  // This is the index state used to start a load/reconciliation attempt. It is
+  // cleared when a newer generation supersedes that attempt.
   path: string;
   documentMetadataRevision: string;
   reviewMetadataRevision: string | null;
 }
 
 interface ReviewSession {
+  // The session is updated as one immutable unit so document, review, composer,
+  // and external-change guard cannot temporarily disagree during a render.
   workspace: WorkspaceView;
   document: DocumentView;
   currentPath: string | null;
@@ -157,6 +173,9 @@ async function loadDocumentAndReview(
   path: string,
   signal: AbortSignal
 ): Promise<{ document: DocumentResponse; review: ReviewLoad }> {
+  // The document and review endpoints are independent reads. Retry only when
+  // their revisions disagree, because a sidecar attachment is meaningful only
+  // against the exact Markdown bytes used to calculate it.
   const maximumAttempts = 3;
   for (let attempt = 1; attempt <= maximumAttempts; attempt += 1) {
     const [documentResult, reviewResult] = await Promise.allSettled([
@@ -408,6 +427,8 @@ function requiredMetadata(documentNode: DocumentNode): {
   documentRevision: string;
   reviewRevision: string | null;
 } {
+  // Ready documents must carry scan metadata. Treating its absence as a
+  // protocol error prevents polling from comparing an unknown state as equal.
   if (documentNode.documentMetadataRevision === undefined) {
     throw new ApiProtocolError();
   }
@@ -451,11 +472,15 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const focusDocumentAfterLoadRef = useRef(false);
   const loadGenerationRef = useRef(0);
   const sessionRef = useRef(session);
+  // Async polling callbacks read this ref so they can transform the latest
+  // session rather than closing over a stale render snapshot.
   const attemptedMetadataRef = useRef<AttemptedMetadata | null>(null);
   const reconcileCycleRef = useRef<(signal: AbortSignal) => Promise<void>>(async () => {});
   const pollErrorRef = useRef<(error: unknown) => "continue" | "stop">(() => "continue");
 
   const transformSession = (transform: (current: ReviewSession) => ReviewSession): void => {
+    // Keep the ref used by in-flight work and the state rendered by Preact in
+    // lockstep for every coordinator transition.
     const next = transform(sessionRef.current);
     sessionRef.current = next;
     setSession(next);
@@ -519,6 +544,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const hasDraftGuard = (): boolean => {
+    // Both composers freeze the document surface. Polling may refresh metadata,
+    // but it must not replace the source or review underneath an active draft.
     const current = sessionRef.current;
     return current.composer !== null || current.operationEditorActive;
   };
@@ -545,6 +572,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     signal: AbortSignal,
     generation: number
   ): Promise<void> => {
+    // Parse before publication. Generation and path checks make an old response
+    // harmless after navigation or a newer load has started.
     const model = await buildRenderModel(loadedDocument.source);
     if (
       signal.aborted ||
@@ -573,6 +602,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     generation: number,
     showLoading: boolean
   ): Promise<void> => {
+    // This is the only path that turns an indexed node into a ready document view,
+    // including the paired revision check performed by loadDocumentAndReview.
     if (indexedDocument.availability === "tooLarge") {
       rememberAttemptedMetadata(path, indexedDocument);
       if (generation === loadGenerationRef.current && sessionRef.current.currentPath === path) {
@@ -667,6 +698,9 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     signal: AbortSignal,
     generation: number
   ): Promise<void> => {
+    // Refresh review state only while the active document remains unchanged. A
+    // changed Markdown revision invalidates attachment ranges and is handled by
+    // freezing the document instead of merging partial responses.
     const metadata = requiredMetadata(indexedDocument);
     rememberAttemptedMetadata(current.path, indexedDocument);
     let response: ReviewResponse;
@@ -750,6 +784,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     state: ChangedWorkspaceStateResponse,
     signal: AbortSignal
   ): Promise<void> => {
+    // Reconciliation is conservative: with a draft guard it records an external
+    // change, and without one it reloads the coordinated document/review pair.
     const path = sessionRef.current.currentPath;
     if (path === null) {
       return;
@@ -870,6 +906,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const reconcileCycle = async (signal: AbortSignal): Promise<void> => {
+    // One polling cycle snapshots workspace metadata, then reconciles the active
+    // document. PollCoordinator guarantees that these cycles never overlap.
     const previousWorkspace = sessionRef.current.workspace;
     const since =
       previousWorkspace.status === "ready" ? previousWorkspace.state.workspaceRevision : undefined;
@@ -912,6 +950,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handlePollError = (error: unknown): "continue" | "stop" => {
+    // Polling failures are usually recoverable filesystem churn. Stop only for a
+    // closed/unavailable application state; transient failures remain visible.
     if (isAbortError(error)) {
       return "continue";
     }
@@ -1018,6 +1058,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const selectAndLoadDocument = (path: string): void => {
+    // Increment before aborting the previous request so even a non-cooperative
+    // promise cannot publish into the newly selected document.
     navigationControllerRef.current?.abort();
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
@@ -1066,6 +1108,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleMarkdownNavigate = (destination: DocumentNavigation): void => {
+    // Links are already classified by the renderer; this handler converts a
+    // document navigation into the same guarded selection flow as the sidebar.
     mutationControllerRef.current?.abort();
     mutationControllerRef.current = null;
     setActiveThreadId(null);
@@ -1081,6 +1125,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleStartTextComment = (anchor: TextThreadAnchor): void => {
+    // Freeze the selected source anchor at creation time. The review store repeats
+    // the exact range check before persisting it.
     updateSessionField("composer", {
       kind: "text",
       anchor,
@@ -1110,6 +1156,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleSubmitComment = (): void => {
+    // Mutations carry revisions captured when the composer opened. The server
+    // rejects stale writes, and this handler preserves the draft on conflict.
     if (
       !composer ||
       composer.submitting ||
@@ -1203,6 +1251,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleReviewOperation = async (operation: ReviewOperation): Promise<void> => {
+    // Reply, status, and delete share one revision-aware transport path so a
+    // successful operation replaces the local review snapshot atomically.
     if (document.status !== "ready" || document.review.status !== "ready") {
       throw new Error("The review is not ready. Select the document again.");
     }

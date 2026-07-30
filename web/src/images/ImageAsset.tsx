@@ -6,6 +6,8 @@ function imageLabel(alt: string): string {
 }
 
 function assetURL(documentPath: string, reference: string): string {
+  // The renderer has already limited reference to a safe relative value; query
+  // encoding preserves it as data for the server to validate again.
   return `/api/asset?${new URLSearchParams({ documentPath, reference }).toString()}`;
 }
 
@@ -20,6 +22,8 @@ export function ImageAsset({
   alt: string;
   title?: string;
 }) {
+  // Images are lazy and same-origin. A failed request becomes an accessible
+  // placeholder instead of retrying indefinitely or exposing the raw URL.
   const source = assetURL(documentPath, reference);
   const [failedSource, setFailedSource] = useState<string | null>(null);
   const label = imageLabel(alt);

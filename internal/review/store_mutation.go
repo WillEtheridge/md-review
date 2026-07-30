@@ -59,6 +59,8 @@ func (store *Store) DeleteThread(ctx context.Context, input DeleteThreadInput) (
 }
 
 type mutationInput struct {
+	// These fields are the browser's whole-document and whole-sidecar
+	// preconditions. They are checked again after opening the current sidecar.
 	documentPath             string
 	expectedDocumentRevision string
 	expectedReviewRevision   string
@@ -77,6 +79,9 @@ func (store *Store) mutate(ctx context.Context, input mutationInput) (MutationRe
 	var documentRevision string
 	var affectedThreadID = input.affectedThreadID
 	updated, err := store.filesystem.MutateFile(ctx, deriveSidecarPath(input.documentPath), filesystem.MutationOptions{MaxBytes: limits.MaxReviewSidecarBytes}, func(current []byte, exists bool) ([]byte, error) {
+		// Read the Markdown inside the sidecar mutation callback. This makes the
+		// document and sidecar revisions describe one attempted operation rather
+		// than two unrelated reads performed by the HTTP layer.
 		markdownNow, readErr := store.readMarkdown(input.documentPath)
 		if readErr != nil {
 			return nil, fmt.Errorf("%w: read document: %v", ErrUnavailable, readErr)
