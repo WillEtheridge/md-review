@@ -318,8 +318,9 @@ The installed host entries are:
 
 Each target has a separate file. Status reports installed or not installed. Uninstall removes
 `SKILL.md`, then removes the `mdreview` directory only when it is empty; unrelated files are
-preserved. Symlinked or malformed target layouts are refused. There is no canonical copy, link,
-hash, ownership record, backup, `--force`, lock, or recovery state.
+preserved. The installer follows symbolic links in these paths. If the process stops during a
+write, the file can be incomplete. There is no canonical copy, hash, ownership record, backup,
+`--force`, lock, or recovery state.
 
 The skill describes mdReview as an ordinary foreground child process. The terminal or agent host
 that launches it owns and stops it.
@@ -392,8 +393,6 @@ browser-internal decoded image memory.
 - **A document changed while composing:** finish or discard the draft to load the current file.
 - **`mdreview setup` requires an interactive terminal:** run setup in a terminal. Use direct
   `skill install` commands with explicit targets in a script.
-- **Skill installation reports an unsafe layout:** replace the symlinked or malformed target
-  directory yourself, then retry.
 - **The process should stop:** return to its terminal and press `Ctrl+C`. mdReview intentionally has no
   daemon or remote stop command.
 

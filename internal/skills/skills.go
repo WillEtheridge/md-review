@@ -3,14 +3,10 @@
 package skills
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Target identifies one global installation target.
@@ -91,7 +87,6 @@ var (
 	errNoTargets       = errors.New("at least one explicit skill target is required")
 	errDuplicateTarget = errors.New("skill targets must not be repeated")
 	errInvalidTarget   = errors.New("unsupported skill target")
-	errUnsafeLayout    = errors.New("unsafe skill target layout")
 )
 
 // New validates an injected installer environment.
@@ -137,7 +132,7 @@ func (manager *Manager) Status() (Snapshot, error) {
 	return snapshot, nil
 }
 
-// Install atomically writes or replaces SKILL.md for explicit targets.
+// Install writes or replaces SKILL.md for explicit targets.
 func (manager *Manager) Install(requests []InstallRequest) (Result, error) {
 	targets := make([]Target, 0, len(requests))
 	for _, request := range requests {
@@ -150,13 +145,10 @@ func (manager *Manager) Install(requests []InstallRequest) (Result, error) {
 	result := Result{Changes: make([]Change, 0, len(requests))}
 	for _, request := range requests {
 		definition, _ := manager.definition(request.Target)
-		if err := ensureSafeDirectory(manager.homeDirectory, definition.skillDirectory); err != nil {
+		if err := os.MkdirAll(definition.skillDirectory, 0o700); err != nil {
 			return result, fmt.Errorf("prepare %s skill directory: %w", request.Target, err)
 		}
-		if err := requireMissingOrRegular(definition.skillPath); err != nil {
-			return result, fmt.Errorf("inspect %s skill target: %w", request.Target, err)
-		}
-		if err := atomicWrite(definition.skillPath, manager.skill); err != nil {
+		if err := os.WriteFile(definition.skillPath, manager.skill, 0o600); err != nil {
 			return result, fmt.Errorf("write %s skill: %w", request.Target, err)
 		}
 		result.Changes = append(result.Changes, Change{
@@ -177,15 +169,8 @@ func (manager *Manager) Uninstall(targets []Target) (Result, error) {
 	result := Result{Changes: make([]Change, 0, len(targets))}
 	for _, target := range targets {
 		definition, _ := manager.definition(target)
-		state, err := manager.inspectTarget(definition)
-		if err != nil {
-			return result, fmt.Errorf("inspect %s skill: %w", target, err)
-		}
 		action := ActionUnchanged
-		if state == StateInstalled {
-			if err := os.Remove(definition.skillPath); err != nil {
-				return result, fmt.Errorf("remove %s skill: %w", target, err)
-			}
+		if err := os.Remove(definition.skillPath); err == nil {
 			action = ActionRemoved
 			entries, err := os.ReadDir(definition.skillDirectory)
 			if err != nil {
@@ -196,6 +181,8 @@ func (manager *Manager) Uninstall(targets []Target) (Result, error) {
 					return result, fmt.Errorf("remove empty %s skill directory: %w", target, err)
 				}
 			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return result, fmt.Errorf("remove %s skill: %w", target, err)
 		}
 		result.Changes = append(result.Changes, Change{
 			Target: target,
@@ -257,134 +244,13 @@ func validateTargets(targets []Target) error {
 }
 
 func (manager *Manager) inspectTarget(definition targetDefinition) (State, error) {
-	if err := validateDirectoryChain(manager.homeDirectory, definition.skillDirectory); err != nil {
-		return "", err
-	}
-	directoryInfo, err := os.Lstat(definition.skillDirectory)
+	_, err := os.Stat(definition.skillPath)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return StateNotInstalled, nil
 	case err != nil:
 		return "", err
-	case directoryInfo.Mode()&os.ModeSymlink != 0 || !directoryInfo.IsDir():
-		return "", errUnsafeLayout
-	}
-	info, err := os.Lstat(definition.skillPath)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return StateNotInstalled, nil
-	case err != nil:
-		return "", err
-	case info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular():
-		return "", errUnsafeLayout
 	default:
 		return StateInstalled, nil
 	}
-}
-
-func ensureSafeDirectory(homeDirectory, targetDirectory string) error {
-	relative, err := filepath.Rel(homeDirectory, targetDirectory)
-	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return errUnsafeLayout
-	}
-	current := homeDirectory
-	for _, component := range strings.Split(relative, string(filepath.Separator)) {
-		current = filepath.Join(current, component)
-		info, statErr := os.Lstat(current)
-		switch {
-		case errors.Is(statErr, os.ErrNotExist):
-			if err := os.Mkdir(current, 0o700); err != nil {
-				if !errors.Is(err, os.ErrExist) {
-					return err
-				}
-				info, inspectErr := os.Lstat(current)
-				if inspectErr != nil ||
-					info.Mode()&os.ModeSymlink != 0 ||
-					!info.IsDir() {
-					return errUnsafeLayout
-				}
-			}
-		case statErr != nil:
-			return statErr
-		case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-			return errUnsafeLayout
-		}
-	}
-	return nil
-}
-
-func validateDirectoryChain(homeDirectory, targetDirectory string) error {
-	relative, err := filepath.Rel(homeDirectory, targetDirectory)
-	if err != nil || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-		return errUnsafeLayout
-	}
-	current := homeDirectory
-	for _, component := range strings.Split(relative, string(filepath.Separator)) {
-		current = filepath.Join(current, component)
-		info, statErr := os.Lstat(current)
-		switch {
-		case errors.Is(statErr, os.ErrNotExist):
-			return nil
-		case statErr != nil:
-			return statErr
-		case info.Mode()&os.ModeSymlink != 0 || !info.IsDir():
-			return errUnsafeLayout
-		}
-	}
-	return nil
-}
-
-func requireMissingOrRegular(path string) error {
-	info, err := os.Lstat(path)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return nil
-	case err != nil:
-		return err
-	case info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular():
-		return errUnsafeLayout
-	default:
-		return nil
-	}
-}
-
-func atomicWrite(path string, content []byte) error {
-	randomBytes := make([]byte, 8)
-	if _, err := io.ReadFull(rand.Reader, randomBytes); err != nil {
-		return err
-	}
-	temporaryPath := filepath.Join(
-		filepath.Dir(path),
-		".mdreview-skill-"+hex.EncodeToString(randomBytes),
-	)
-	file, err := os.OpenFile(temporaryPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	closed := false
-	cleanup := func() {
-		if !closed {
-			_ = file.Close()
-		}
-		_ = os.Remove(temporaryPath)
-	}
-	if _, err := file.Write(content); err != nil {
-		cleanup()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		closed = true
-		cleanup()
-		return err
-	}
-	closed = true
-	if err := os.Rename(temporaryPath, path); err != nil {
-		cleanup()
-		return err
-	}
-	return nil
 }

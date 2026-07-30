@@ -87,7 +87,7 @@ func TestExplicitInstallReplacesAndUninstallPreservesUnrelatedFile(t *testing.T)
 	}
 }
 
-func TestInstallRefusesSymlinkedLayout(t *testing.T) {
+func TestInstallUsesConfiguredSymlinkedLayout(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(home, ".codex")); err != nil {
@@ -97,7 +97,12 @@ func TestInstallRefusesSymlinkedLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Install([]InstallRequest{{Target: TargetCodex}}); err == nil {
-		t.Fatal("Install() error = nil, want unsafe layout refusal")
+	if _, err := manager.Install([]InstallRequest{{Target: TargetCodex}}); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	installedPath := filepath.Join(outside, "skills", "mdreview", "SKILL.md")
+	content, err := os.ReadFile(installedPath)
+	if err != nil || string(content) != "skill" {
+		t.Fatalf("installed skill = %q, %v", content, err)
 	}
 }
