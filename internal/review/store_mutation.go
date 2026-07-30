@@ -35,33 +35,6 @@ func (store *Store) Reply(ctx context.Context, input ReplyInput) (MutationResult
 	})
 }
 
-// EditMessage replaces one current human message body while retaining its ID,
-// author, and creation time and recording a server-owned edit timestamp.
-func (store *Store) EditMessage(ctx context.Context, input EditMessageInput) (MutationResult, error) {
-	if err := validateMutationOperation(input.DocumentPath, input.ExpectedDocumentRevision, input.ExpectedReviewRevision, input.MessageID); err != nil {
-		return MutationResult{}, err
-	}
-	if err := validateMessageBody(input.MessageBody); err != nil {
-		return MutationResult{}, err
-	}
-	return store.mutate(ctx, mutationInput{
-		documentPath: input.DocumentPath, expectedDocumentRevision: input.ExpectedDocumentRevision,
-		expectedReviewRevision: input.ExpectedReviewRevision,
-		apply: func(document *Document) error {
-			_, err := document.editHumanMessage(
-				input.MessageID,
-				input.MessageBody,
-				store.now().UTC().Format(time.RFC3339Nano),
-			)
-			return err
-		},
-		affectedThread: func(document *Document) string {
-			threadID, _ := document.threadIDForMessage(input.MessageID)
-			return threadID
-		},
-	})
-}
-
 // ChangeStatus applies one browser-allowed resolve or reopen transition.
 func (store *Store) ChangeStatus(ctx context.Context, input ChangeStatusInput) (MutationResult, error) {
 	if err := validateMutationOperation(input.DocumentPath, input.ExpectedDocumentRevision, input.ExpectedReviewRevision, input.ThreadID); err != nil {
@@ -198,29 +171,6 @@ func (document *Document) findThread(threadID string) (int, bool) {
 	return 0, false
 }
 
-func (document *Document) findMessage(messageID string) (int, int, bool) {
-	for threadIndex, thread := range document.threads {
-		for messageIndex, message := range thread.Messages {
-			if message.ID != messageID {
-				continue
-			}
-			return threadIndex, messageIndex, true
-		}
-	}
-	return 0, 0, false
-}
-
-func (document *Document) threadIDForMessage(messageID string) (string, bool) {
-	for _, thread := range document.threads {
-		for _, message := range thread.Messages {
-			if message.ID == messageID {
-				return thread.ID, true
-			}
-		}
-	}
-	return "", false
-}
-
 func (document *Document) appendReply(threadID string, message Message) error {
 	threadIndex, ok := document.findThread(threadID)
 	if !ok {
@@ -243,27 +193,6 @@ func (document *Document) appendReply(threadID string, message Message) error {
 	}
 	document.threads[threadIndex] = thread
 	return nil
-}
-
-func (document *Document) editHumanMessage(messageID, body, editedAt string) (string, error) {
-	threadIndex, messageIndex, ok := document.findMessage(messageID)
-	if !ok {
-		return "", fmt.Errorf("%w: message %q does not exist", ErrInvalidOperation, messageID)
-	}
-	current := document.threads[threadIndex].Messages[messageIndex]
-	if current.Author.Type != "human" {
-		return "", fmt.Errorf("%w: only human messages can be edited", ErrInvalidOperation)
-	}
-	updated := current
-	updated.Body = body
-	updated.EditedAt = &editedAt
-	thread := cloneThread(document.threads[threadIndex])
-	thread.Messages[messageIndex] = updated
-	if err := validateThreadModel(thread); err != nil {
-		return "", err
-	}
-	document.threads[threadIndex] = thread
-	return thread.ID, nil
 }
 
 func (document *Document) changeThreadStatus(threadID string, status ThreadStatus) error {

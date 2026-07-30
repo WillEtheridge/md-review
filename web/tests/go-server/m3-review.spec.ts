@@ -73,22 +73,9 @@ test("compiled browser completes the keyboard review lifecycle and persists it",
   const agent = page.locator('.thread-card[data-thread-id="thread_ui_agent"]');
   await expect(workflow.locator(".thread-metadata")).toContainText("Handled");
   await expect(agent.getByText("Agent-authored browser explanation.")).toBeVisible();
-  await expect(
-    agent.locator('[data-message-id="message_ui_agent"]').getByRole("button", { name: "Edit" })
-  ).toHaveCount(0);
+  await expect(workflow.locator(".message-author")).toContainText("edited");
 
   await page.getByRole("checkbox", { name: "Resolved" }).check();
-
-  await pressButton(
-    workflow.locator(".thread-card-header").getByRole("button", { name: /More actions for/u })
-  );
-  await pressButton(workflow.getByRole("button", { name: "Edit message 1" }));
-  const editor = workflow.getByRole("textbox", { name: "Edit message" });
-  await editor.fill("Edited through the compiled browser.");
-  await editor.press("Control+Enter");
-  await expect(workflow.getByText("Edited through the compiled browser.")).toBeVisible();
-  await expect(workflow.locator(".message-author")).toContainText("edited");
-  await expect(workflow.locator(".thread-target")).toBeFocused();
 
   await pressButton(workflow.getByRole("button", { name: "Reply" }));
   const reply = workflow.getByRole("textbox", { name: "Reply" });
@@ -143,9 +130,9 @@ test("compiled browser completes the keyboard review lifecycle and persists it",
       type: "human",
       name: "Reviewer"
     },
-    body: "Edited through the compiled browser."
+    body: "Original browser feedback."
   });
-  expect(persistedWorkflow?.messages[0]?.editedAt).toMatch(/Z$/u);
+  expect(persistedWorkflow?.messages[0]?.editedAt).toBe("2026-07-28T08:05:00Z");
   expect(persistedWorkflow?.messages[1]).toMatchObject({
     author: {
       type: "human",

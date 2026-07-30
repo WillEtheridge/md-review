@@ -12,7 +12,6 @@ interface ReviewMessage {
   };
   body: string;
   createdAt: string;
-  editedAt?: string;
 }
 
 interface ReviewThread {
@@ -173,33 +172,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
   });
   expect(mutation.thread.messages[1]?.id).toMatch(/^message_[A-Za-z0-9_-]{22,}$/u);
 
-  const originalCreatedAt = findMessage(mutation.thread, "message_human").createdAt;
-  const editResponse = await request.patch(
-    `${environment.baseURL}/api/messages/${encodedIDSegment("message_human")}`,
-    {
-      headers: mutationHeaders(environment),
-      data: JSON.stringify({
-        documentPath,
-        expectedDocumentRevision: mutation.documentRevision,
-        expectedReviewRevision: mutation.reviewRevision,
-        message: {
-          body: "Edited human feedback."
-        }
-      })
-    }
-  );
-  expect(editResponse.status()).toBe(200);
-  mutation = (await editResponse.json()) as MutationResponse;
-  expect(findMessage(mutation.thread, "message_human")).toMatchObject({
-    body: "Edited human feedback.",
-    createdAt: originalCreatedAt,
-    author: {
-      type: "human",
-      name: "Reviewer"
-    },
-    editedAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/u)
-  });
-
   const resolveResponse = await request.patch(
     `${environment.baseURL}/api/threads/${encodedIDSegment("thread_workflow")}/status`,
     {
@@ -249,20 +221,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
   }
 
   review = await readReview(request, environment, documentPath);
-  const agentEdit = await request.patch(
-    `${environment.baseURL}/api/messages/${encodedIDSegment("message_agent")}`,
-    {
-      headers: mutationHeaders(environment),
-      data: JSON.stringify({
-        ...commonRevisionRequest(documentPath, review),
-        message: {
-          body: "A browser must not edit this."
-        }
-      })
-    }
-  );
-  await expectError(agentEdit, 422, "invalidReviewOperation");
-
   const repliedDelete = await request.delete(
     `${environment.baseURL}/api/threads/${encodedIDSegment("thread_agent")}`,
     {
@@ -298,7 +256,7 @@ test("compiled server completes the human lifecycle and persists only sidecar da
   expect(restored.threads.map((thread) => thread.id)).not.toContain("thread_delete");
   expect(findThread(restored, "thread_workflow").status).toBe("open");
   expect(findMessage(findThread(restored, "thread_workflow"), "message_human").body).toBe(
-    "Edited human feedback."
+    "Original human feedback."
   );
   expect(findMessage(findThread(restored, "thread_agent"), "message_agent").body).toBe(
     "Agent-authored explanation."
@@ -363,11 +321,8 @@ test("compiled server routes opaque IDs as one base64url segment", async ({
   const environment = serverEnvironment();
   const documentPath = browserDocument("m3-opaque", testInfo.project.name);
   const threadID = "./..//100%/雪";
-  const messageID = "../message/%/猫";
   const threadSegment = encodedIDSegment(threadID);
-  const messageSegment = encodedIDSegment(messageID);
   expect(threadSegment).toMatch(/^~[A-Za-z0-9_-]+$/u);
-  expect(messageSegment).toMatch(/^~[A-Za-z0-9_-]+$/u);
 
   const initial = await readReview(request, environment, documentPath);
   const replyResponse = await request.post(
@@ -385,24 +340,6 @@ test("compiled server routes opaque IDs as one base64url segment", async ({
   expect(replyResponse.status()).toBe(201);
   const replied = (await replyResponse.json()) as MutationResponse;
   expect(replied.thread.id).toBe(threadID);
-
-  const editResponse = await request.patch(
-    `${environment.baseURL}/api/messages/${messageSegment}`,
-    {
-      headers: mutationHeaders(environment),
-      data: JSON.stringify({
-        documentPath,
-        expectedDocumentRevision: replied.documentRevision,
-        expectedReviewRevision: replied.reviewRevision,
-        message: {
-          body: "Opaque message ID edited safely."
-        }
-      })
-    }
-  );
-  expect(editResponse.status()).toBe(200);
-  const edited = (await editResponse.json()) as MutationResponse;
-  expect(findMessage(edited.thread, messageID).body).toBe("Opaque message ID edited safely.");
 });
 
 test("compiled server scopes identical target IDs to the requested document", async ({

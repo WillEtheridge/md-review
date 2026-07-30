@@ -77,15 +77,6 @@ type ReplyInput struct {
 	MessageBody              string
 }
 
-// EditMessageInput identifies one existing human message and its replacement body.
-type EditMessageInput struct {
-	DocumentPath             string
-	ExpectedDocumentRevision string
-	ExpectedReviewRevision   string
-	MessageID                string
-	MessageBody              string
-}
-
 // ChangeStatusInput identifies one thread and an allowed human status transition.
 type ChangeStatusInput struct {
 	DocumentPath             string
@@ -103,7 +94,7 @@ type DeleteThreadInput struct {
 	ThreadID                 string
 }
 
-// MutationResult describes an applied reply, message edit, or status change.
+// MutationResult describes an applied reply or status change.
 type MutationResult struct {
 	DocumentRevision string         `json:"documentRevision"`
 	ReviewRevision   string         `json:"reviewRevision"`

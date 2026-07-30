@@ -25,8 +25,6 @@ interface MutationBody {
   expectedReviewRevision?: string;
 }
 
-type EditorKind = "reply" | "edit";
-
 const threadID = "thread_two_tab_target";
 const messageID = "message_two_tab_target";
 const initialBody = "Initial two-tab conflict target.";
@@ -113,17 +111,15 @@ async function openFixture(
   return page;
 }
 
-function mutationRequest(kind: EditorKind, request: Request): boolean {
+function mutationRequest(request: Request): boolean {
   const url = new URL(request.url());
-  return kind === "reply"
-    ? request.method() === "POST" && /^\/api\/threads\/[^/]+\/messages$/u.test(url.pathname)
-    : request.method() === "PATCH" && /^\/api\/messages\/[^/]+$/u.test(url.pathname);
+  return request.method() === "POST" && /^\/api\/threads\/[^/]+\/messages$/u.test(url.pathname);
 }
 
-function observeMutationBodies(page: Page, kind: EditorKind): MutationBody[] {
+function observeMutationBodies(page: Page): MutationBody[] {
   const bodies: MutationBody[] = [];
   page.on("request", (request) => {
-    if (!mutationRequest(kind, request)) {
+    if (!mutationRequest(request)) {
       return;
     }
     bodies.push(request.postDataJSON() as MutationBody);
@@ -131,117 +127,101 @@ function observeMutationBodies(page: Page, kind: EditorKind): MutationBody[] {
   return bodies;
 }
 
-async function openEditor(page: Page, kind: EditorKind, draft: string): Promise<void> {
+async function openEditor(page: Page, draft: string): Promise<void> {
   const card = page.locator(`[data-thread-id="${threadID}"]`);
-  if (kind === "reply") {
-    await card.getByRole("button", { name: "Reply" }).click();
-    await card.getByRole("textbox", { name: "Reply" }).fill(draft);
-    return;
+  await card.getByRole("button", { name: "Reply" }).click();
+  await card.getByRole("textbox", { name: "Reply" }).fill(draft);
+}
+
+function editor(page: Page) {
+  return page.getByRole("textbox", { name: "Reply" });
+}
+
+test("two independent tabs retain stale reply drafts after whole-sidecar revision conflicts", async ({
+  browser,
+  request
+}, testInfo) => {
+  const environment = serverEnvironment();
+  const label = testInfo.project.name === "firefox" ? "Firefox" : "Chromium";
+  const documentPath = `m5-two-tab-reply-${testInfo.project.name}.md`;
+  const documentFile = join(environment.workspace, documentPath);
+  const sidecarFile = join(environment.workspace, `${documentPath}.review.json`);
+  const heading = `${label} two-tab reply conflict`;
+  const initialSidecar = fixtureSidecar();
+  const externalSidecar = replaceExactly(initialSidecar, initialBody, externalBody);
+  const contexts: BrowserContext[] = [];
+
+  try {
+    await writeFile(
+      documentFile,
+      `# ${heading}\n\nThis fixture exercises a real compiled-server conflict.\n`,
+      "utf8"
+    );
+    await writeFile(sidecarFile, initialSidecar, "utf8");
+
+    const firstContext = await browser.newContext();
+    const secondContext = await browser.newContext();
+    contexts.push(firstContext, secondContext);
+    const [firstPage, secondPage] = await Promise.all([
+      openFixture(firstContext, environment, documentPath, heading),
+      openFixture(secondContext, environment, documentPath, heading)
+    ]);
+    const firstMutationBodies = observeMutationBodies(firstPage);
+    const secondMutationBodies = observeMutationBodies(secondPage);
+    const firstDraft = "First tab exact reply draft";
+    const secondDraft = "Second tab independent reply draft";
+
+    const initialReview = await readReview(request, environment, documentPath);
+
+    await Promise.all([openEditor(firstPage, firstDraft), openEditor(secondPage, secondDraft)]);
+    await expect(editor(firstPage)).toHaveValue(firstDraft);
+    await expect(editor(secondPage)).toHaveValue(secondDraft);
+
+    await writeFile(sidecarFile, externalSidecar, "utf8");
+    await expect(firstPage.getByText(externalBody)).toBeVisible({ timeout: 10_000 });
+    await expect(secondPage.getByText(externalBody)).toBeVisible({ timeout: 10_000 });
+    await expect(editor(firstPage)).toHaveValue(firstDraft);
+    await expect(editor(secondPage)).toHaveValue(secondDraft);
+
+    const changedReview = await readReview(request, environment, documentPath);
+    expect(changedReview.reviewRevision).not.toBe(initialReview.reviewRevision);
+
+    await editor(firstPage).press("Control+Enter");
+    await expect(
+      firstPage.getByRole("alert").filter({
+        hasText: "The document or review changed on disk. Reload before trying again."
+      })
+    ).toBeVisible();
+    await expect(editor(firstPage)).toHaveValue(firstDraft);
+    await expect(editor(secondPage)).toHaveValue(secondDraft);
+
+    await editor(secondPage).press("Control+Enter");
+    await expect(
+      secondPage.getByRole("alert").filter({
+        hasText: "The document or review changed on disk. Reload before trying again."
+      })
+    ).toBeVisible();
+    await expect(editor(firstPage)).toHaveValue(firstDraft);
+    await expect(editor(secondPage)).toHaveValue(secondDraft);
+
+    expect(firstMutationBodies).toHaveLength(1);
+    expect(secondMutationBodies).toHaveLength(1);
+    expect(firstMutationBodies[0]).toMatchObject({
+      expectedDocumentRevision: initialReview.documentRevision,
+      expectedReviewRevision: initialReview.reviewRevision
+    });
+    expect(secondMutationBodies[0]).toMatchObject({
+      expectedDocumentRevision: initialReview.documentRevision,
+      expectedReviewRevision: initialReview.reviewRevision
+    });
+
+    const finalSidecar = await readFile(sidecarFile, "utf8");
+    expect(finalSidecar).toBe(externalSidecar);
+    expect(finalSidecar).not.toContain(firstDraft);
+    expect(finalSidecar).not.toContain(secondDraft);
+  } finally {
+    await Promise.allSettled(contexts.map((context) => context.close()));
+    await rm(sidecarFile, { force: true });
+    await rm(documentFile, { force: true });
   }
-  await card
-    .locator(".thread-card-header")
-    .getByRole("button", { name: /More actions for/u })
-    .click();
-  await card.getByRole("button", { name: "Edit message 1" }).click();
-  await card.getByRole("textbox", { name: "Edit message" }).fill(draft);
-}
-
-function editor(page: Page, kind: EditorKind) {
-  return page.getByRole("textbox", {
-    name: kind === "reply" ? "Reply" : "Edit message"
-  });
-}
-
-for (const kind of ["reply", "edit"] as const) {
-  test(`two independent tabs retain stale ${kind} drafts after whole-sidecar revision conflicts`, async ({
-    browser,
-    request
-  }, testInfo) => {
-    const environment = serverEnvironment();
-    const label = testInfo.project.name === "firefox" ? "Firefox" : "Chromium";
-    const documentPath = `m5-two-tab-${kind}-${testInfo.project.name}.md`;
-    const documentFile = join(environment.workspace, documentPath);
-    const sidecarFile = join(environment.workspace, `${documentPath}.review.json`);
-    const heading = `${label} two-tab ${kind} conflict`;
-    const initialSidecar = fixtureSidecar();
-    const externalSidecar = replaceExactly(initialSidecar, initialBody, externalBody);
-    const contexts: BrowserContext[] = [];
-
-    try {
-      await writeFile(
-        documentFile,
-        `# ${heading}\n\nThis fixture exercises a real compiled-server conflict.\n`,
-        "utf8"
-      );
-      await writeFile(sidecarFile, initialSidecar, "utf8");
-
-      const firstContext = await browser.newContext();
-      const secondContext = await browser.newContext();
-      contexts.push(firstContext, secondContext);
-      const [firstPage, secondPage] = await Promise.all([
-        openFixture(firstContext, environment, documentPath, heading),
-        openFixture(secondContext, environment, documentPath, heading)
-      ]);
-      const firstMutationBodies = observeMutationBodies(firstPage, kind);
-      const secondMutationBodies = observeMutationBodies(secondPage, kind);
-      const firstDraft = `First tab exact ${kind} draft`;
-      const secondDraft = `Second tab independent ${kind} draft`;
-
-      const initialReview = await readReview(request, environment, documentPath);
-
-      await Promise.all([
-        openEditor(firstPage, kind, firstDraft),
-        openEditor(secondPage, kind, secondDraft)
-      ]);
-      await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
-      await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
-
-      await writeFile(sidecarFile, externalSidecar, "utf8");
-      await expect(firstPage.getByText(externalBody)).toBeVisible({ timeout: 10_000 });
-      await expect(secondPage.getByText(externalBody)).toBeVisible({ timeout: 10_000 });
-      await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
-      await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
-
-      const changedReview = await readReview(request, environment, documentPath);
-      expect(changedReview.reviewRevision).not.toBe(initialReview.reviewRevision);
-
-      await editor(firstPage, kind).press("Control+Enter");
-      await expect(
-        firstPage.getByRole("alert").filter({
-          hasText: "The document or review changed on disk. Reload before trying again."
-        })
-      ).toBeVisible();
-      await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
-      await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
-
-      await editor(secondPage, kind).press("Control+Enter");
-      await expect(
-        secondPage.getByRole("alert").filter({
-          hasText: "The document or review changed on disk. Reload before trying again."
-        })
-      ).toBeVisible();
-      await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
-      await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
-
-      expect(firstMutationBodies).toHaveLength(1);
-      expect(secondMutationBodies).toHaveLength(1);
-      expect(firstMutationBodies[0]).toMatchObject({
-        expectedDocumentRevision: initialReview.documentRevision,
-        expectedReviewRevision: initialReview.reviewRevision
-      });
-      expect(secondMutationBodies[0]).toMatchObject({
-        expectedDocumentRevision: initialReview.documentRevision,
-        expectedReviewRevision: initialReview.reviewRevision
-      });
-
-      const finalSidecar = await readFile(sidecarFile, "utf8");
-      expect(finalSidecar).toBe(externalSidecar);
-      expect(finalSidecar).not.toContain(firstDraft);
-      expect(finalSidecar).not.toContain(secondDraft);
-    } finally {
-      await Promise.allSettled(contexts.map((context) => context.close()));
-      await rm(sidecarFile, { force: true });
-      await rm(documentFile, { force: true });
-    }
-  });
-}
+});

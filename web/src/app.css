@@ -693,42 +693,6 @@ textarea:focus-visible,
   cursor: pointer;
 }
 
-.hljs-keyword,
-.hljs-selector-tag,
-.hljs-literal {
-  color: var(--syntax-keyword);
-}
-
-.hljs-string,
-.hljs-title,
-.hljs-section {
-  color: var(--syntax-string);
-}
-
-.hljs-comment,
-.hljs-quote {
-  color: var(--syntax-comment);
-  font-style: italic;
-}
-
-.hljs-number,
-.hljs-symbol,
-.hljs-bullet,
-.hljs-attr {
-  color: var(--syntax-number);
-}
-
-.hljs-title,
-.hljs-type,
-.hljs-built_in {
-  color: var(--syntax-title);
-}
-
-.hljs-punctuation,
-.hljs-operator {
-  color: var(--syntax-punctuation);
-}
-
 .review-header {
   border-block-end: 1px solid var(--border);
 }

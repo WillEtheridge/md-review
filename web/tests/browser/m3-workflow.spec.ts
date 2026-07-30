@@ -51,7 +51,12 @@ interface MockServer {
   reviewGets: number;
 }
 
-function message(id: string, body: string, authorType: "human" | "agent" = "human"): MockMessage {
+function message(
+  id: string,
+  body: string,
+  authorType: "human" | "agent" = "human",
+  editedAt?: string
+): MockMessage {
   return {
     id,
     author: {
@@ -59,7 +64,8 @@ function message(id: string, body: string, authorType: "human" | "agent" = "huma
       name: authorType === "human" ? "External reviewer" : "Codex"
     },
     body,
-    createdAt: "2026-07-28T14:30:00Z"
+    createdAt: "2026-07-28T14:30:00Z",
+    ...(editedAt ? { editedAt } : {})
   };
 }
 
@@ -211,17 +217,6 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
         );
         affectedThread.status = "open";
       }
-    } else if (request.method() === "PATCH" && parts[1] === "api" && parts[2] === "messages") {
-      const messageID = decodeOpaqueID(parts[3] ?? "");
-      const body = request.postDataJSON() as { message: { body: string } };
-      affectedThread = server.threads.find((thread) =>
-        thread.messages.some((item) => item.id === messageID)
-      );
-      const target = affectedThread?.messages.find((item) => item.id === messageID);
-      if (target) {
-        target.body = body.message.body;
-        target.editedAt = "2026-07-29T01:00:00Z";
-      }
     } else if (
       request.method() === "PATCH" &&
       parts[1] === "api" &&
@@ -278,7 +273,12 @@ test("completes the human lifecycle while preserving direct-file states and focu
   const server: MockServer = {
     threads: [
       documentThread("thread_handled", "handled", [
-        message("message_external", "Externally authored human message")
+        message(
+          "message_external",
+          "Externally authored human message",
+          "human",
+          "2026-07-29T01:00:00Z"
+        )
       ]),
       textThread("thread_resolved", "Alpha", "resolved", [
         message("message_review", "Initial review"),
@@ -306,19 +306,7 @@ test("completes the human lifecycle while preserving direct-file states and focu
   await expect(resolved.getByText("Direct agent reply")).toBeVisible();
   await expect(resolved.getByRole("button", { name: "Delete thread" })).toHaveCount(0);
 
-  await handled
-    .locator(".thread-card-header")
-    .getByRole("button", { name: /More actions for/u })
-    .click();
-  await handled.getByRole("button", { name: "Edit message 1" }).click();
-  const edit = handled.getByRole("textbox", { name: "Edit message" });
-  await edit.fill("Externally authored message, edited by the reviewer");
-  await edit.press("Control+Enter");
-  await expect(
-    handled.getByText("Externally authored message, edited by the reviewer")
-  ).toBeVisible();
   await expect(handled.locator(".message-author")).toContainText("edited");
-  await expect(handled.locator(".thread-target")).toBeFocused();
 
   await handled.getByRole("button", { name: "Reply" }).click();
   const reply = handled.getByRole("textbox", { name: "Reply" });
@@ -355,7 +343,6 @@ test("completes the human lifecycle while preserving direct-file states and focu
   await expect(deleted).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Comment on document" })).toBeFocused();
 
-  expect(server.observedRoutes).toContain("PATCH /api/messages/~bWVzc2FnZV9leHRlcm5hbA");
   expect(server.observedRoutes).toContain("POST /api/threads/~dGhyZWFkX2hhbmRsZWQ/messages");
 });
 
@@ -410,7 +397,7 @@ test("filters and navigates active highlights while rendering reduced safe messa
   await expect(page.getByText("Resolved note")).toBeVisible();
 });
 
-test("keeps reply and edit drafts after revision conflicts and permits a keyboard retry", async ({
+test("keeps a reply draft after a revision conflict and permits a keyboard retry", async ({
   page
 }) => {
   const server: MockServer = {
@@ -438,21 +425,6 @@ test("keeps reply and edit drafts after revision conflicts and permits a keyboar
 
   await reply.press("Control+Enter");
   await expect(card.getByText("Draft survives conflict")).toBeVisible();
-
-  server.failNextMutation = true;
-  await card
-    .locator(".thread-card-header")
-    .getByRole("button", { name: /More actions for/u })
-    .click();
-  await card.getByRole("button", { name: "Edit message 1" }).click();
-  const edit = card.getByRole("textbox", { name: "Edit message" });
-  await edit.fill("Edited draft survives too");
-  await edit.press("Control+Enter");
-  await expect(card.getByRole("alert")).toContainText("draft has been kept");
-  await expect(edit).toHaveValue("Edited draft survives too");
-  await edit.press("Escape");
-  await expect(card.getByRole("textbox", { name: "Edit message" })).toHaveCount(0);
-  await expect(card.locator(".thread-target")).toBeFocused();
 });
 
 test("describes an oversized reply to assistive technology", async ({ page }) => {

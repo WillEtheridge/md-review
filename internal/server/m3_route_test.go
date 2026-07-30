@@ -17,7 +17,6 @@ func TestParseReviewOperationRouteKeepsOpaqueIDsInsideOneSegment(t *testing.T) {
 		{"reply", reviewOperationReply, "/api/threads/", "/messages", "thread_/ %"},
 		{"status", reviewOperationStatus, "/api/threads/", "/status", "."},
 		{"delete", reviewOperationDelete, "/api/threads/", "", ".."},
-		{"edit message", reviewOperationEditMessage, "/api/messages/", "", "消息/one"},
 	}
 
 	for _, test := range tests {
@@ -47,7 +46,6 @@ func TestParseReviewOperationRouteRejectsMalformedOrRouteChangingSegments(t *tes
 		"/api/threads/" + invalidUTF8 + "/messages",
 		"/api/threads/~dGhyZWFk/message",
 		"/api/threads/~dGhyZWFk/extra/messages",
-		"/api/messages/~dGhyZWFk/extra",
 		"/api/threads/~dGhyZWFk/",
 	}
 

@@ -15,7 +15,8 @@
             "name": "Reviewer"
           },
           "body": "Original human feedback.",
-          "createdAt": "2026-07-29T08:00:00Z"
+          "createdAt": "2026-07-29T08:00:00Z",
+          "editedAt": "2026-07-29T08:05:00Z"
         }
       ]
     },

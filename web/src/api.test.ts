@@ -7,7 +7,6 @@ import reviewEmptyContract from "./testdata/contracts/m2/review-empty.json";
 import reviewContract from "./testdata/contracts/m2/review.json";
 import deleteResponseContract from "./testdata/contracts/m3/delete-response.json";
 import deleteThreadRequestContract from "./testdata/contracts/m3/delete-thread-request.json";
-import editMessageRequestContract from "./testdata/contracts/m3/edit-message-request.json";
 import mutationResponseContract from "./testdata/contracts/m3/mutation-response.json";
 import replyRequestContract from "./testdata/contracts/m3/reply-request.json";
 import m3ReviewContract from "./testdata/contracts/m3/review.json";
@@ -599,7 +598,6 @@ describe("Milestone 3 review operation transport", () => {
     });
 
     await client.reply("thread/..", replyRequestContract);
-    await client.editMessage(".", editMessageRequestContract);
     await client.setThreadStatus("révision🙂", statusRequestContract as StatusRequest);
     await client.deleteThread("..", deleteThreadRequestContract);
 
@@ -608,11 +606,6 @@ describe("Milestone 3 review operation transport", () => {
         url: "/api/threads/~dGhyZWFkLy4u/messages",
         method: "POST",
         body: replyRequestContract
-      },
-      {
-        url: "/api/messages/~Lg",
-        method: "PATCH",
-        body: editMessageRequestContract
       },
       {
         url: "/api/threads/~csOpdmlzaW9u8J-Zgg/status",

@@ -37,7 +37,6 @@ const (
 	reviewOperationReply
 	reviewOperationStatus
 	reviewOperationDelete
-	reviewOperationEditMessage
 )
 
 // Config provides immutable dependencies for a loopback HTTP server.
@@ -80,7 +79,6 @@ type ReviewStore interface {
 	Read(context.Context, string) (review.Snapshot, error)
 	CreateThread(context.Context, review.CreateThreadInput) (review.CreateThreadResult, error)
 	Reply(context.Context, review.ReplyInput) (review.MutationResult, error)
-	EditMessage(context.Context, review.EditMessageInput) (review.MutationResult, error)
 	ChangeStatus(context.Context, review.ChangeStatusInput) (review.MutationResult, error)
 	DeleteThread(context.Context, review.DeleteThreadInput) (review.DeleteThreadResult, error)
 }
@@ -212,11 +210,6 @@ func (server *Server) serveReviewOperation(
 			return
 		}
 		server.serveDeleteThread(response, request, requestID, targetID)
-	case reviewOperationEditMessage:
-		if !server.requireMethod(response, request, requestID, http.MethodPatch) {
-			return
-		}
-		server.serveEditMessage(response, request, requestID, targetID)
 	default:
 		server.writeError(response, requestID, http.StatusNotFound, "endpointNotFound", "This API endpoint does not exist.")
 	}
@@ -386,33 +379,6 @@ func (server *Server) serveReply(
 	server.writeJSON(response, http.StatusCreated, result)
 }
 
-func (server *Server) serveEditMessage(
-	response http.ResponseWriter,
-	request *http.Request,
-	requestID string,
-	messageID string,
-) {
-	if !server.validateMutationRequest(response, request, requestID) {
-		return
-	}
-	input, err := decodeEditMessageRequest(response, request)
-	if err != nil {
-		server.writeMutationDecodeError(response, requestID, err)
-		return
-	}
-	input.MessageID = messageID
-	if _, err := server.workspace.ReadDocument(request.Context(), input.DocumentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
-		return
-	}
-	result, err := server.review.EditMessage(request.Context(), input)
-	if err != nil {
-		server.writeReviewError(response, requestID, err)
-		return
-	}
-	server.writeJSON(response, http.StatusOK, result)
-}
-
 func (server *Server) serveChangeStatus(
 	response http.ResponseWriter,
 	request *http.Request,
@@ -531,14 +497,6 @@ func parseReviewOperationRoute(urlPath string) (reviewOperationRoute, string, bo
 			return reviewOperationUnknown, "", false
 		}
 		return reviewOperationDelete, id, ok
-	case len(segments) == 3 &&
-		segments[0] == "api" &&
-		segments[1] == "messages":
-		id, ok := decodeRouteID(segments[2])
-		if !ok {
-			return reviewOperationUnknown, "", false
-		}
-		return reviewOperationEditMessage, id, ok
 	default:
 		return reviewOperationUnknown, "", false
 	}
@@ -600,22 +558,6 @@ func decodeReplyRequest(
 		return review.ReplyInput{}, err
 	}
 	return review.ReplyInput{
-		DocumentPath:             transport.DocumentPath,
-		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
-		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
-		MessageBody:              transport.Message.Body,
-	}, nil
-}
-
-func decodeEditMessageRequest(
-	response http.ResponseWriter,
-	request *http.Request,
-) (review.EditMessageInput, error) {
-	var transport editMessageOperationRequest
-	if err := decodeStrictRequest(response, request, &transport); err != nil {
-		return review.EditMessageInput{}, err
-	}
-	return review.EditMessageInput{
 		DocumentPath:             transport.DocumentPath,
 		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
 		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
@@ -920,13 +862,6 @@ type reviewOperationRequest struct {
 }
 
 type replyOperationRequest struct {
-	reviewOperationRequest
-	Message struct {
-		Body string `json:"body"`
-	} `json:"message"`
-}
-
-type editMessageOperationRequest struct {
 	reviewOperationRequest
 	Message struct {
 		Body string `json:"body"`

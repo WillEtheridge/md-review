@@ -240,10 +240,6 @@ func TestStoreWorkflowMutationsRequireWholeRevisions(t *testing.T) {
 			_, err := store.Reply(context.Background(), ReplyInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing", MessageBody: "Reply again."})
 			return err
 		},
-		"edit": func() error {
-			_, err := store.EditMessage(context.Background(), EditMessageInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, MessageID: "message_existing", MessageBody: "Edited."})
-			return err
-		},
 		"status": func() error {
 			_, err := store.ChangeStatus(context.Background(), ChangeStatusInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing", Status: StatusResolved})
 			return err

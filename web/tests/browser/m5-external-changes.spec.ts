@@ -517,63 +517,48 @@ test("freezes an open new-comment draft until cancellation triggers fresh reconc
   expect(server.reviewGets).toBe(baseline.reviewGets + 1);
 });
 
-for (const editorKind of ["reply", "edit"] as const) {
-  test(`freezes an open ${editorKind} draft and submits its captured revisions`, async ({
-    page
-  }) => {
-    const server = new MockM5Server();
-    const baseline = await openWorkspace(page, server);
-    const card = page.locator('.thread-card[data-thread-id="thread_m5"]');
-    const draft = `${editorKind} draft survives external changes`;
+test("freezes an open reply draft and submits its captured revisions", async ({ page }) => {
+  const server = new MockM5Server();
+  const baseline = await openWorkspace(page, server);
+  const card = page.locator('.thread-card[data-thread-id="thread_m5"]');
+  const draft = "Reply draft survives external changes";
 
-    if (editorKind === "reply") {
-      await card.getByRole("button", { name: "Reply" }).click();
-      await card.getByRole("textbox", { name: "Reply" }).fill(draft);
-    } else {
-      await card
-        .locator(".thread-card-header")
-        .getByRole("button", { name: /More actions for/u })
-        .click();
-      await card.getByRole("button", { name: "Edit message 1" }).click();
-      await card.getByRole("textbox", { name: "Edit message" }).fill(draft);
-    }
+  await card.getByRole("button", { name: "Reply" }).click();
+  await card.getByRole("textbox", { name: "Reply" }).fill(draft);
 
-    server.reviewMetadataRevision = changedReviewMetadata;
-    server.reviewRevision = changedReviewRevision;
-    server.advanceWorkspace();
-    await expect.poll(() => server.reviewGets).toBe(baseline.reviewGets + 1);
+  server.reviewMetadataRevision = changedReviewMetadata;
+  server.reviewRevision = changedReviewRevision;
+  server.advanceWorkspace();
+  await expect.poll(() => server.reviewGets).toBe(baseline.reviewGets + 1);
 
-    const editor = page.getByRole("textbox", {
-      name: editorKind === "reply" ? "Reply" : "Edit message"
-    });
-    await expect(editor).toHaveValue(draft);
+  const editor = page.getByRole("textbox", { name: "Reply" });
+  await expect(editor).toHaveValue(draft);
 
-    if (!server.readme) {
-      throw new Error("README fixture is missing");
-    }
-    server.readme.source = changedSource;
-    server.readme.revision = changedDocumentRevision;
-    server.readme.metadataRevision = changedDocumentMetadata;
-    server.reviewDocumentRevision = changedDocumentRevision;
-    server.advanceWorkspace();
-    await expect(
-      page.getByText("Document changed on disk. Finish or discard your comment to reload.", {
-        exact: true
-      })
-    ).toBeVisible();
-    await expect(editor).toHaveValue(draft);
-    await expect(page.getByRole("heading", { level: 1, name: "M5 baseline" })).toBeVisible();
+  if (!server.readme) {
+    throw new Error("README fixture is missing");
+  }
+  server.readme.source = changedSource;
+  server.readme.revision = changedDocumentRevision;
+  server.readme.metadataRevision = changedDocumentMetadata;
+  server.reviewDocumentRevision = changedDocumentRevision;
+  server.advanceWorkspace();
+  await expect(
+    page.getByText("Document changed on disk. Finish or discard your comment to reload.", {
+      exact: true
+    })
+  ).toBeVisible();
+  await expect(editor).toHaveValue(draft);
+  await expect(page.getByRole("heading", { level: 1, name: "M5 baseline" })).toBeVisible();
 
-    await editor.press("Control+Enter");
-    await expect(editor).toHaveValue(draft);
-    await expect(page.getByRole("alert").filter({ hasText: "draft has been kept" })).toBeVisible();
-    expect(server.mutationBodies).toHaveLength(1);
-    expect(server.mutationBodies[0]).toMatchObject({
-      expectedDocumentRevision: baselineDocumentRevision,
-      expectedReviewRevision: baselineReviewRevision
-    });
+  await editor.press("Control+Enter");
+  await expect(editor).toHaveValue(draft);
+  await expect(page.getByRole("alert").filter({ hasText: "draft has been kept" })).toBeVisible();
+  expect(server.mutationBodies).toHaveLength(1);
+  expect(server.mutationBodies[0]).toMatchObject({
+    expectedDocumentRevision: baselineDocumentRevision,
+    expectedReviewRevision: baselineReviewRevision
   });
-}
+});
 
 for (const transition of ["removed", "oversized"] as const) {
   test(`shows the contextual ${transition} state for an active document without a draft`, async ({

@@ -621,9 +621,6 @@ type fakeReviewStore struct {
 	replyResult  review.MutationResult
 	replyErr     error
 	replyInput   *review.ReplyInput
-	editResult   review.MutationResult
-	editErr      error
-	editInput    *review.EditMessageInput
 	statusResult review.MutationResult
 	statusErr    error
 	statusInput  *review.ChangeStatusInput
@@ -657,16 +654,6 @@ func (fake fakeReviewStore) Reply(
 		*fake.replyInput = input
 	}
 	return fake.replyResult, fake.replyErr
-}
-
-func (fake fakeReviewStore) EditMessage(
-	_ context.Context,
-	input review.EditMessageInput,
-) (review.MutationResult, error) {
-	if fake.editInput != nil {
-		*fake.editInput = input
-	}
-	return fake.editResult, fake.editErr
 }
 
 func (fake fakeReviewStore) ChangeStatus(

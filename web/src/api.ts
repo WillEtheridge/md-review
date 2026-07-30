@@ -177,12 +177,6 @@ export interface ReplyRequest extends ReviewOperationRequest {
   };
 }
 
-export interface EditMessageRequest extends ReviewOperationRequest {
-  message: {
-    body: string;
-  };
-}
-
 export interface StatusRequest extends ReviewOperationRequest {
   status: "open" | "resolved";
 }
@@ -694,20 +688,6 @@ export class ApiClient {
     return this.#mutate(
       `/api/threads/${encodeOpaqueIDSegment(threadID)}/messages`,
       "POST",
-      request,
-      decodeMutationResponse,
-      signal
-    );
-  }
-
-  editMessage(
-    messageID: string,
-    request: EditMessageRequest,
-    signal?: AbortSignal
-  ): Promise<MutationResponse> {
-    return this.#mutate(
-      `/api/messages/${encodeOpaqueIDSegment(messageID)}`,
-      "PATCH",
       request,
       decodeMutationResponse,
       signal

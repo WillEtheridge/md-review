@@ -1,6 +1,5 @@
 import type { Element, Nodes, Root, Text } from "hast";
 import { h, type ComponentChild } from "preact";
-import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
@@ -379,8 +378,7 @@ export async function buildRenderModel(source: string): Promise<RenderModel> {
     .use(rehypeRaw)
     // Raw Markdown HTML is untrusted presentation. In particular it cannot
     // inject focus order or replace visible labels with misleading ARIA.
-    .use(rehypeSanitize, markdownSanitizeSchema)
-    .use(rehypeHighlight, { detect: false });
+    .use(rehypeSanitize, markdownSanitizeSchema);
 
   const markdownTree = processor.parse(source);
   const tree = await processor.run(markdownTree);

@@ -110,11 +110,7 @@ const greeting = "hello";
         .filter(({ tagName }) => tagName === "th" || tagName === "td")
         .map(({ properties }) => properties.align)
     ).toEqual(["left", "right", "left", "right"]);
-    expect(
-      renderedElements
-        .filter(({ tagName }) => tagName === "code")
-        .some(({ properties }) => String(properties.className).includes("hljs"))
-    ).toBe(true);
+    expect(renderedElements.some(({ tagName }) => tagName === "code")).toBe(true);
     expect(model.leaves.size).toBeGreaterThan(10);
     expect(
       Array.from(model.leaves.values()).every(
@@ -228,7 +224,7 @@ const greeting = "hello";
     }
   });
 
-  it("retains exact mappings for entities, escapes, inline code, and highlighted code", async () => {
+  it("retains exact mappings for entities, escapes, inline code, and fenced code", async () => {
     const model = await buildRenderModel(`Escaped \\*asterisk\\* and &amp; &#x1F642;.
 
 Code: \`a   b\`.

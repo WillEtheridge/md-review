@@ -394,14 +394,6 @@ export type ReviewOperation =
       body: string;
     }
   | {
-      kind: "edit";
-      threadId: string;
-      messageId: string;
-      expectedDocumentRevision: string;
-      expectedReviewRevision: string;
-      body: string;
-    }
-  | {
       kind: "status";
       threadId: string;
       expectedDocumentRevision: string;
@@ -416,9 +408,8 @@ export type ReviewOperation =
     };
 
 interface OperationEditor {
-  kind: "reply" | "edit";
+  kind: "reply";
   threadId: string;
-  messageId?: string;
   expectedDocumentRevision: string;
   expectedReviewRevision: string;
   draft: string;
@@ -458,8 +449,8 @@ function OperationComposer({
   const bodyBytes = new TextEncoder().encode(editor.draft).length;
   const empty = editor.draft.trim().length === 0;
   const tooLarge = bodyBytes > MAX_MESSAGE_BODY_BYTES;
-  const label = editor.kind === "reply" ? "Reply" : "Edit message";
-  const inputID = `${editor.kind}-message-${editor.messageId ?? editor.threadId}`;
+  const label = "Reply";
+  const inputID = `reply-message-${editor.threadId}`;
   const limitID = `${inputID}-limit`;
 
   return (
@@ -606,7 +597,6 @@ function ThreadCard({
   onTargetRef,
   onSelect,
   onStartReply,
-  onStartEdit,
   onStatus,
   deleteConfirmation,
   onRequestDelete,
@@ -626,7 +616,6 @@ function ThreadCard({
   onTargetRef: (element: HTMLButtonElement | null) => void;
   onSelect: () => void;
   onStartReply: (trigger: HTMLButtonElement) => void;
-  onStartEdit: (messageId: string, body: string, trigger: HTMLButtonElement) => void;
   onStatus: (status: "open" | "resolved", trigger: HTMLButtonElement) => void;
   deleteConfirmation: boolean;
   onRequestDelete: (trigger: HTMLButtonElement | null) => void;
@@ -651,13 +640,7 @@ function ThreadCard({
   const canOperate = interactive && !pending && editor === null;
   const canDelete = canOperate && thread.messages.length === 1;
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const editableMessages = thread.messages.flatMap((message, index) =>
-    interactive && editor === null && !pending && message.author.type === "human"
-      ? [{ message, index }]
-      : []
-  );
-  const hasThreadMenu =
-    editableMessages.length > 0 || (canOperate && (thread.status === "resolved" || canDelete));
+  const hasThreadMenu = canOperate && (thread.status === "resolved" || canDelete);
 
   return (
     <article
@@ -695,19 +678,7 @@ function ThreadCard({
           >
             {(close) => (
               <>
-                {editableMessages.map(({ message, index }) => (
-                  <button
-                    key={message.id}
-                    type="button"
-                    onClick={(event) => {
-                      close();
-                      onStartEdit(message.id, message.body, event.currentTarget);
-                    }}
-                  >
-                    Edit message {String(index + 1)}
-                  </button>
-                ))}
-                {canOperate && thread.status === "resolved" ? (
+                {thread.status === "resolved" ? (
                   <button
                     type="button"
                     onClick={(event) => {
@@ -745,15 +716,6 @@ function ThreadCard({
               </p>
             </div>
             <MessageMarkdown source={message.body} />
-            {editor?.kind === "edit" && editor.messageId === message.id ? (
-              <OperationComposer
-                editor={editor}
-                disabledReason={editorDisabledReason}
-                onDraft={onEditorDraft}
-                onSubmit={onEditorSubmit}
-                onCancel={onEditorCancel}
-              />
-            ) : null}
           </li>
         ))}
       </ol>
@@ -981,19 +943,12 @@ export function ReviewPanel({
     ? readyReview?.threads.find((thread) => thread.id === editor.threadId)
     : undefined;
   const editorIsMounted = editor
-    ? visibleThreads.some(
-        (thread) =>
-          thread.id === editor.threadId &&
-          (editor.kind === "reply" ||
-            thread.messages.some((message) => message.id === editor.messageId))
-      )
+    ? visibleThreads.some((thread) => thread.id === editor.threadId)
     : false;
   const editorDisabledReason = editor
     ? review?.status === "error"
       ? `${review.title}. ${review.message}`
-      : !editorThread ||
-          (editor.kind === "edit" &&
-            !editorThread.messages.some((message) => message.id === editor.messageId))
+      : !editorThread
         ? "This review item is no longer available."
         : null
     : null;
@@ -1046,52 +1001,18 @@ export function ReviewPanel({
     onEditorActiveChange(true);
   };
 
-  const handleStartEdit = (
-    threadId: string,
-    messageId: string,
-    body: string,
-    trigger: HTMLButtonElement
-  ): void => {
-    if (!documentRevision || !readyReview?.revision) {
-      return;
-    }
-    originRef.current = trigger;
-    setActionError(null);
-    setEditor({
-      kind: "edit",
-      threadId,
-      messageId,
-      expectedDocumentRevision: documentRevision,
-      expectedReviewRevision: readyReview.revision,
-      draft: body,
-      submitting: false,
-      error: null
-    });
-    onEditorActiveChange(true);
-  };
-
   const handleEditorSubmit = (): void => {
     if (!editor || editor.submitting) {
       return;
     }
     const submittedThreadId = editor.threadId;
-    const operation: ReviewOperation =
-      editor.kind === "reply"
-        ? {
-            kind: "reply",
-            threadId: editor.threadId,
-            expectedDocumentRevision: editor.expectedDocumentRevision,
-            expectedReviewRevision: editor.expectedReviewRevision,
-            body: editor.draft
-          }
-        : {
-            kind: "edit",
-            threadId: editor.threadId,
-            messageId: editor.messageId ?? "",
-            expectedDocumentRevision: editor.expectedDocumentRevision,
-            expectedReviewRevision: editor.expectedReviewRevision,
-            body: editor.draft
-          };
+    const operation: ReviewOperation = {
+      kind: "reply",
+      threadId: editor.threadId,
+      expectedDocumentRevision: editor.expectedDocumentRevision,
+      expectedReviewRevision: editor.expectedReviewRevision,
+      body: editor.draft
+    };
     setEditor({ ...editor, submitting: true, error: null });
     void onOperation(operation)
       .then(() => {
@@ -1241,9 +1162,6 @@ export function ReviewPanel({
               onStartReply={(trigger) => {
                 handleStartReply(thread.id, trigger);
               }}
-              onStartEdit={(messageId, body, trigger) => {
-                handleStartEdit(thread.id, messageId, body, trigger);
-              }}
               onStatus={(status, trigger) => {
                 if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
@@ -1319,9 +1237,6 @@ export function ReviewPanel({
               onStartReply={(trigger) => {
                 handleStartReply(thread.id, trigger);
               }}
-              onStartEdit={(messageId, body, trigger) => {
-                handleStartEdit(thread.id, messageId, body, trigger);
-              }}
               onStatus={(status, trigger) => {
                 if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
@@ -1373,9 +1288,7 @@ export function ReviewPanel({
       ) : null}
       {editor && !editorIsMounted ? (
         <section class="thread-section" aria-labelledby="preserved-editor-heading">
-          <h3 id="preserved-editor-heading">
-            {editor.kind === "reply" ? "Reply draft" : "Message edit"}
-          </h3>
+          <h3 id="preserved-editor-heading">Reply draft</h3>
           <OperationComposer
             editor={editor}
             disabledReason={editorDisabledReason}

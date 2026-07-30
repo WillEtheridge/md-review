@@ -140,12 +140,6 @@
   --color-active: #8b4936;
   --color-draft: #276cae;
   --color-conflict: #a3473d;
-  --syntax-keyword: #8c3f55;
-  --syntax-string: #4e6c36;
-  --syntax-number: #895c1f;
-  --syntax-title: #3f5f82;
-  --syntax-comment: #777166;
-  --syntax-punctuation: #655f56;
 }
 
 :root[data-theme="light"] {
@@ -184,12 +178,6 @@
   --color-active: #efaa91;
   --color-draft: #9bc8ff;
   --color-conflict: #f0a39a;
-  --syntax-keyword: #efa0b5;
-  --syntax-string: #aed08d;
-  --syntax-number: #e5bb76;
-  --syntax-title: #9ec7ef;
-  --syntax-comment: #9c968b;
-  --syntax-punctuation: #c3bdb2;
   --shadow-raised: 0 0.25rem 1rem rgb(0 0 0 / 28%);
   --shadow-overlay: 0 0.75rem 2rem rgb(0 0 0 / 36%);
   --image-outline: rgb(255 255 255 / 10%);
@@ -224,12 +212,6 @@
     --color-active: #efaa91;
     --color-draft: #9bc8ff;
     --color-conflict: #f0a39a;
-    --syntax-keyword: #efa0b5;
-    --syntax-string: #aed08d;
-    --syntax-number: #e5bb76;
-    --syntax-title: #9ec7ef;
-    --syntax-comment: #9c968b;
-    --syntax-punctuation: #c3bdb2;
     --shadow-raised: 0 0.25rem 1rem rgb(0 0 0 / 28%);
     --shadow-overlay: 0 0.75rem 2rem rgb(0 0 0 / 36%);
     --image-outline: rgb(255 255 255 / 10%);

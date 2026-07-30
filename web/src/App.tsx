@@ -10,7 +10,6 @@ import {
   type DeleteThreadRequest,
   type DocumentNode,
   type DocumentResponse,
-  type EditMessageRequest,
   type NavigationNode,
   type ReplyRequest,
   type ReviewResponse,
@@ -1277,29 +1276,16 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
               } satisfies ReplyRequest,
               controller.signal
             )
-          : operation.kind === "edit"
-            ? await api.editMessage(
-                operation.messageId,
-                {
-                  ...commonRequest,
-                  message: { body: operation.body }
-                } satisfies EditMessageRequest,
-                controller.signal
-              )
-            : await api.setThreadStatus(
-                operation.threadId,
-                {
-                  ...commonRequest,
-                  status: operation.status
-                } satisfies StatusRequest,
-                controller.signal
-              );
+          : await api.setThreadStatus(
+              operation.threadId,
+              {
+                ...commonRequest,
+                status: operation.status
+              } satisfies StatusRequest,
+              controller.signal
+            );
 
-      if (
-        response.thread.id !== operation.threadId ||
-        (operation.kind === "edit" &&
-          !response.thread.messages.some((message) => message.id === operation.messageId))
-      ) {
+      if (response.thread.id !== operation.threadId) {
         throw new ApiProtocolError();
       }
       transformDocument((current) => {

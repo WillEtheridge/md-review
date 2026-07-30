@@ -218,7 +218,6 @@
 0644 web/src/testdata/contracts/m2/sidecar.json
 0644 web/src/testdata/contracts/m3/delete-response.json
 0644 web/src/testdata/contracts/m3/delete-thread-request.json
-0644 web/src/testdata/contracts/m3/edit-message-request.json
 0644 web/src/testdata/contracts/m3/mutation-response.json
 0644 web/src/testdata/contracts/m3/reply-request.json
 0644 web/src/testdata/contracts/m3/review.json
