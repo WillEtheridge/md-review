@@ -72,7 +72,7 @@ describe("navigation", () => {
   });
 
   it("filters document filenames only while retaining their ancestor directories", () => {
-    const filtered = filterNavigation(unordered, "BETA");
+    const filtered = filterNavigation(orderNavigation(unordered), "BETA");
 
     expect(filtered).toEqual([
       {
@@ -90,7 +90,7 @@ describe("navigation", () => {
         ]
       }
     ]);
-    expect(filterNavigation(unordered, "guides")).toEqual([]);
+    expect(filterNavigation(orderNavigation(unordered), "guides")).toEqual([]);
   });
 
   it("finds and enumerates nested indexed documents", () => {

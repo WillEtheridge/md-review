@@ -779,6 +779,8 @@ textarea:focus-visible,
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
+  align-items: center;
+  padding: 0 1rem 1rem;
 }
 
 .thread-actions button,
@@ -833,10 +835,6 @@ textarea:focus-visible,
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-}
-
-.operation-composer--edit {
-  margin-block-start: 0.875rem;
 }
 
 .operation-composer--reply {
@@ -1206,13 +1204,6 @@ textarea:focus-visible,
 .message-reduced-content {
   display: block;
   margin-block: 0.5rem;
-}
-
-.thread-actions {
-  display: flex;
-  gap: 0.375rem;
-  align-items: center;
-  padding: 0 1rem 1rem;
 }
 
 .delete-confirmation {

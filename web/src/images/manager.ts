@@ -52,7 +52,6 @@ export interface ImageResourceSubscription {
   getState(): ImageResourceState;
   setNearViewport(isNearViewport: boolean): void;
   retry(): void;
-  reload(): void;
   reportDecodeFailure(objectURL: string): void;
   unsubscribe(): void;
 }
@@ -71,7 +70,6 @@ interface ResourceEntry {
   nearViewportSubscribers: Set<number>;
   blockedIntersectionSubscribers: Set<number>;
   generation: number;
-  pendingAfterActive: boolean;
   controller: AbortController | undefined;
   blob: Blob | undefined;
   objectURL: string | undefined;
@@ -141,7 +139,6 @@ function initialEntry(reference: string): ResourceEntry {
     nearViewportSubscribers: new Set(),
     blockedIntersectionSubscribers: new Set(),
     generation: 0,
-    pendingAfterActive: false,
     controller: undefined,
     blob: undefined,
     objectURL: undefined,
@@ -209,11 +206,6 @@ export class ImageResourceManager {
           this.#retry(resource);
         });
       },
-      reload: () => {
-        ifSubscribed(() => {
-          this.#reload(resource);
-        });
-      },
       reportDecodeFailure: (objectURL) => {
         ifSubscribed(() => {
           this.#reportDecodeFailure(resource, objectURL);
@@ -238,13 +230,6 @@ export class ImageResourceManager {
     }
   }
 
-  reload(reference: string): void {
-    const resource = this.#resources.get(reference);
-    if (resource) {
-      this.#reload(resource);
-    }
-  }
-
   reportDecodeFailure(reference: string, objectURL: string): void {
     const resource = this.#resources.get(reference);
     if (resource) {
@@ -261,7 +246,6 @@ export class ImageResourceManager {
 
     for (const resource of this.#resources.values()) {
       resource.generation += 1;
-      resource.pendingAfterActive = false;
       resource.controller?.abort();
       this.#discardReadyResource(resource);
       resource.state = { status: "deferred", reason: "disposed" };
@@ -325,26 +309,6 @@ export class ImageResourceManager {
     this.#queueResource(resource);
   }
 
-  #reload(resource: ResourceEntry): void {
-    if (this.#disposed) {
-      return;
-    }
-    resource.blockedIntersectionSubscribers.clear();
-    resource.generation += 1;
-
-    if (resource.state.status === "loading") {
-      resource.pendingAfterActive = true;
-      resource.state = { status: "queued" };
-      this.#notify(resource);
-      resource.controller?.abort();
-      return;
-    }
-
-    resource.pendingAfterActive = false;
-    this.#discardReadyResource(resource);
-    this.#queueResource(resource, false);
-  }
-
   #reportDecodeFailure(resource: ResourceEntry, objectURL: string): void {
     if (this.#disposed || resource.state.status !== "ready" || resource.objectURL !== objectURL) {
       return;
@@ -358,14 +322,11 @@ export class ImageResourceManager {
     this.#notify(resource);
   }
 
-  #queueResource(resource: ResourceEntry, incrementGeneration = true): void {
+  #queueResource(resource: ResourceEntry): void {
     if (this.#disposed) {
       return;
     }
-    if (incrementGeneration) {
-      resource.generation += 1;
-    }
-    resource.pendingAfterActive = false;
+    resource.generation += 1;
     resource.state = { status: "queued" };
     this.#queue.push({ resource, generation: resource.generation });
     this.#notify(resource);
@@ -446,10 +407,6 @@ export class ImageResourceManager {
         resource.controller = undefined;
       }
       this.#activeLoadCount -= 1;
-      if (!this.#disposed && resource.pendingAfterActive && resource.state.status === "queued") {
-        resource.pendingAfterActive = false;
-        this.#queue.push({ resource, generation: resource.generation });
-      }
       this.#pumpQueue();
     }
   }

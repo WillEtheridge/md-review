@@ -44,11 +44,11 @@ export function filterNavigation(
 ): NavigationNode[] {
   const foldedFilter = filter.trim().toLowerCase();
   if (foldedFilter.length === 0) {
-    return orderNavigation(nodes);
+    return [...nodes];
   }
 
   const result: NavigationNode[] = [];
-  for (const node of orderNavigation(nodes)) {
+  for (const node of nodes) {
     if (node.kind === "document") {
       if (node.name.toLowerCase().includes(foldedFilter)) {
         result.push(node);

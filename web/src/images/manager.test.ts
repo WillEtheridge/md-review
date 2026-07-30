@@ -369,7 +369,7 @@ describe("ImageResourceManager", () => {
     expect(second.getState().status).toBe("ready");
   });
 
-  it("supports explicit retry and ready-resource reload without leaking a URL", async () => {
+  it("supports explicit retry", async () => {
     const fixture = manager();
     const { subscription } = subscribe(fixture.manager, "retry.png");
     subscription.setNearViewport(true);
@@ -384,64 +384,6 @@ describe("ImageResourceManager", () => {
       status: "ready",
       objectURL: "blob:test-1"
     });
-
-    subscription.reload();
-    expect(fixture.objectURLs.revoked).toEqual(["blob:test-1"]);
-    expect(fixture.fetcher.requests).toHaveLength(3);
-    fixture.fetcher.requests[2]?.resolve(blob(7));
-    await settle();
-    expect(subscription.getState()).toEqual({
-      status: "ready",
-      objectURL: "blob:test-2",
-      contentType: "image/png",
-      sizeBytes: 7
-    });
-    expect(fixture.manager.retainedBlobSizeBytes).toBe(7);
-  });
-
-  it("aborts an active request before starting its explicit reload", async () => {
-    const fixture = manager();
-    const { subscription } = subscribe(fixture.manager, "reload.png");
-    subscription.setNearViewport(true);
-    const firstRequest = fixture.fetcher.requests[0];
-    expect(firstRequest?.signal.aborted).toBe(false);
-
-    subscription.reload();
-    expect(firstRequest?.signal.aborted).toBe(true);
-    expect(fixture.fetcher.requests).toHaveLength(1);
-    await settle();
-
-    expect(fixture.fetcher.requests).toHaveLength(2);
-    expect(fixture.fetcher.maximumActiveCount).toBe(1);
-    fixture.fetcher.requests[1]?.resolve(blob(9));
-    await settle();
-    expect(subscription.getState()).toMatchObject({
-      status: "ready",
-      sizeBytes: 9
-    });
-  });
-
-  it("does not admit a stale completion when an active reload cannot abort immediately", async () => {
-    const fetcher = new ControlledFetcher(false);
-    const fixture = manager(fetcher);
-    const { subscription } = subscribe(fixture.manager, "stale.png");
-    subscription.setNearViewport(true);
-    subscription.reload();
-
-    fixture.fetcher.requests[0]?.resolve(blob(5));
-    await settle();
-    expect(fixture.objectURLs.created).toHaveLength(0);
-    expect(fixture.fetcher.requests).toHaveLength(2);
-
-    fixture.fetcher.requests[1]?.resolve(blob(7));
-    await settle();
-    expect(subscription.getState()).toEqual({
-      status: "ready",
-      objectURL: "blob:test-1",
-      contentType: "image/png",
-      sizeBytes: 7
-    });
-    expect(fixture.manager.retainedBlobSizeBytes).toBe(7);
   });
 
   it("turns a matching decode failure into corrupt state and revokes once", async () => {
