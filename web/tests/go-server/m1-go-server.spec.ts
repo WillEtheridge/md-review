@@ -122,8 +122,8 @@ test("compiled server enforces host, traversal, and security headers", async ({ 
   const shell = await request.get(`${baseURL}/`);
   expect(shell.status()).toBe(200);
   const contentSecurityPolicy = shell.headers()["content-security-policy"] ?? "";
-  expect(contentSecurityPolicy).toContain("img-src blob:");
-  expect(contentSecurityPolicy).not.toContain("img-src 'self'");
+  expect(contentSecurityPolicy).toContain("img-src 'self'");
+  expect(contentSecurityPolicy).not.toContain("img-src blob:");
   expect(contentSecurityPolicy).not.toContain("img-src data:");
   expect(shell.headers()["referrer-policy"]).toBe("no-referrer");
   expect(shell.headers()["x-content-type-options"]).toBe("nosniff");

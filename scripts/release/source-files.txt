@@ -188,8 +188,6 @@
 0644 web/src/document-state.test.ts
 0644 web/src/document-state.ts
 0644 web/src/images/ImageAsset.tsx
-0644 web/src/images/manager.test.ts
-0644 web/src/images/manager.ts
 0644 web/src/link-policy.test.ts
 0644 web/src/link-policy.ts
 0644 web/src/main.tsx

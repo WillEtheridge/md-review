@@ -717,39 +717,6 @@ export class ApiClient {
       signal
     );
   }
-
-  async getAsset(documentPath: string, reference: string, signal?: AbortSignal): Promise<Blob> {
-    const query = new URLSearchParams({ documentPath, reference });
-    const response = await this.#fetch(`/api/asset?${query.toString()}`, {
-      method: "GET",
-      cache: "no-store",
-      redirect: "error",
-      signal: signal ?? null
-    });
-    if (!response.ok) {
-      const failure = decodeRequestError(await responseBody(response));
-      throw new ApiRequestError(failure.envelope, response.status, failure.current);
-    }
-
-    const contentType = response.headers.get("Content-Type");
-    if (
-      contentType !== "image/png" &&
-      contentType !== "image/jpeg" &&
-      contentType !== "image/gif" &&
-      contentType !== "image/webp"
-    ) {
-      throw new ApiProtocolError();
-    }
-    const blob = await response.blob();
-    if (blob.type !== contentType || blob.size > 20 * 1024 * 1024) {
-      throw new ApiProtocolError();
-    }
-    return blob;
-  }
-
-  fetchAsset(documentPath: string, reference: string, signal: AbortSignal): Promise<Blob> {
-    return this.getAsset(documentPath, reference, signal);
-  }
 }
 
 export function encodeOpaqueIDSegment(id: string): string {

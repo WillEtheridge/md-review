@@ -674,23 +674,9 @@ textarea:focus-visible,
 
 .markdown-image-placeholder {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  justify-content: space-between;
   inline-size: min(100%, var(--reading-width));
   min-block-size: 4rem;
   margin: var(--space-6) 0;
-}
-
-.image-action {
-  align-self: center;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border);
-  color: var(--text);
-  background: var(--panel);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  cursor: pointer;
 }
 
 .review-header {
@@ -1281,7 +1267,6 @@ textarea:focus-visible,
 
   .theme-options button:hover,
   .panel-error button:hover,
-  .image-action:hover,
   .review-header button:hover,
   .thread-actions button:not(.thread-action-primary):hover,
   .delete-confirmation button:not(:first-child):hover,
@@ -1300,7 +1285,6 @@ textarea:focus-visible,
 
   .theme-options button:active,
   .panel-error button:active,
-  .image-action:active,
   .review-header button:active,
   .selection-action button:active,
   .thread-actions button:active,

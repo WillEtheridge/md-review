@@ -18,7 +18,6 @@ import {
 } from "./api";
 import "./app.css";
 import { documentFailure, type DocumentFailure } from "./document-state";
-import { ImageResourceManager } from "./images/manager";
 import {
   ancestorDirectoryPaths,
   documentPaths,
@@ -444,27 +443,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const attemptedMetadataRef = useRef<AttemptedMetadata | null>(null);
   const reconcileCycleRef = useRef<(signal: AbortSignal) => Promise<void>>(async () => {});
   const pollErrorRef = useRef<(error: unknown) => "continue" | "stop">(() => "continue");
-  const displayedDocumentPath = document.status === "ready" ? document.path : null;
-  const displayedDocumentRevision = document.status === "ready" ? document.revision : null;
-  const imageManager = useMemo(
-    () =>
-      displayedDocumentPath && displayedDocumentRevision
-        ? new ImageResourceManager({
-            documentPath: displayedDocumentPath,
-            documentRevision: displayedDocumentRevision,
-            fetcher: api
-          })
-        : null,
-    [api, displayedDocumentPath, displayedDocumentRevision]
-  );
-
-  useEffect(
-    () => () => {
-      imageManager?.dispose();
-    },
-    [imageManager]
-  );
-
   const updateWorkspace = (next: WorkspaceView): void => {
     workspaceRef.current = next;
     setWorkspace(next);
@@ -1473,7 +1451,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
               currentDocumentPath={document.path}
               indexedDocumentPaths={indexedPaths}
               onNavigate={handleMarkdownNavigate}
-              imageManager={imageManager}
               review={document.review}
               composer={composer}
               activeThreadId={activeThreadId}

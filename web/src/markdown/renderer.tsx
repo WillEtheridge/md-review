@@ -9,7 +9,6 @@ import { unified } from "unified";
 
 import { classifyLink } from "../link-policy";
 import { ImageAsset } from "../images/ImageAsset";
-import type { ImageResourceManager } from "../images/manager";
 import { alignRenderedText, fencedCodeContentSpan, inlineCodeContentSpan } from "./alignment";
 import type { ImageDescriptor, LeafMapping, RenderModel } from "./types";
 
@@ -22,8 +21,6 @@ interface RenderContext {
   currentDocumentPath: string;
   indexedDocumentPaths: ReadonlySet<string>;
   onNavigate: (destination: DocumentNavigation) => void;
-  imageManager: ImageResourceManager | null;
-  imageObserverRoot: HTMLElement | null;
 }
 
 type SanitizeAttributes = NonNullable<SanitizeSchema["attributes"]>;
@@ -500,23 +497,9 @@ function renderNode(
   if (node.type === "element") {
     const image = model.images.get(node);
     if (image) {
-      if (!context.imageManager) {
-        const label = image.alt.length > 0 ? `Image: ${image.alt}` : "Image omitted";
-        return h(
-          "span",
-          {
-            key,
-            class: "markdown-media-placeholder",
-            role: "img",
-            "aria-label": label
-          },
-          label
-        );
-      }
       return h(ImageAsset, {
         key,
-        manager: context.imageManager,
-        observerRoot: context.imageObserverRoot,
+        documentPath: context.currentDocumentPath,
         reference: image.reference,
         alt: image.alt,
         ...(image.title ? { title: image.title } : {})
@@ -585,17 +568,13 @@ export function MarkdownDocument({
   model,
   currentDocumentPath,
   indexedDocumentPaths,
-  onNavigate,
-  imageManager = null,
-  imageObserverRoot = null
+  onNavigate
 }: {
   documentRef?: { current: HTMLElement | null };
   model: RenderModel;
   currentDocumentPath: string;
   indexedDocumentPaths: ReadonlySet<string>;
   onNavigate: (destination: DocumentNavigation) => void;
-  imageManager?: ImageResourceManager | null;
-  imageObserverRoot?: HTMLElement | null;
 }): ComponentChild {
   return h(
     "article",
@@ -608,9 +587,7 @@ export function MarkdownDocument({
     renderNode(model, model.tree, "root", {
       currentDocumentPath,
       indexedDocumentPaths,
-      onNavigate,
-      imageManager,
-      imageObserverRoot
+      onNavigate
     })
   );
 }

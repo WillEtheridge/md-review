@@ -48,11 +48,6 @@ interface ExpectedImage {
   reference: string;
 }
 
-interface ObjectURLLog {
-  created: string[];
-  revoked: string[];
-}
-
 const expectedImages: readonly ExpectedImage[] = [
   {
     alt: "Contained PNG",
@@ -167,13 +162,13 @@ function imageDirective(contentSecurityPolicy: string): string | undefined {
     .find((directive) => directive.startsWith("img-src "));
 }
 
-async function decodedImageURLs(page: Page): Promise<string[]> {
+async function decodedImageSources(page: Page): Promise<string[]> {
   const urls: string[] = [];
   for (const image of expectedImages) {
     const locator = page.getByRole("img", { name: image.alt, exact: true });
     await expect(locator).toHaveAttribute("loading", "lazy");
     await expect(locator).toHaveAttribute("decoding", "async");
-    await expect(locator).toHaveAttribute("src", /^blob:/u);
+    await expect(locator).toHaveAttribute("src", /^\/api\/asset\?documentPath=.+&reference=.+/u);
     await expect
       .poll(() =>
         locator.evaluate((element) => {
@@ -186,74 +181,19 @@ async function decodedImageURLs(page: Page): Promise<string[]> {
       .toBe(true);
     const source = await locator.getAttribute("src");
     if (!source) {
-      throw new Error(`loaded image ${image.alt} has no object URL`);
+      throw new Error(`loaded image ${image.alt} has no source`);
     }
     urls.push(source);
   }
   return urls;
 }
 
-async function installObjectURLObservation(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    const created: string[] = [];
-    const revoked: string[] = [];
-    const createObjectURL = URL.createObjectURL.bind(URL);
-    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
-    URL.createObjectURL = (blob: Blob): string => {
-      const objectURL = createObjectURL(blob);
-      created.push(objectURL);
-      return objectURL;
-    };
-    URL.revokeObjectURL = (objectURL: string): void => {
-      revoked.push(objectURL);
-      revokeObjectURL(objectURL);
-    };
-    Reflect.set(globalThis, "__mdreviewTestObjectURLs", { created, revoked });
-  });
-}
-
-function stringArray(value: unknown): string[] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const strings: string[] = [];
-  for (const item of value) {
-    if (typeof item !== "string") {
-      return null;
-    }
-    strings.push(item);
-  }
-  return strings;
-}
-
-async function objectURLLog(page: Page): Promise<ObjectURLLog> {
-  const value = await page.evaluate((): unknown => {
-    const observed: unknown = Reflect.get(globalThis, "__mdreviewTestObjectURLs");
-    return observed;
-  });
-  if (typeof value !== "object" || value === null) {
-    throw new Error("object URL observation was not installed");
-  }
-  const created = "created" in value ? stringArray(value.created) : null;
-  const revoked = "revoked" in value ? stringArray(value.revoked) : null;
-  if (!created || !revoked) {
-    throw new Error("object URL observation was not installed");
-  }
-  return {
-    created,
-    revoked
-  };
-}
-
-test("compiled binary keeps contained images local, inert, and revision-owned", async ({
-  page
-}, testInfo) => {
+test("compiled binary keeps native lazy images contained and inert", async ({ page }, testInfo) => {
   const environment = serverEnvironment();
   const fixture = await createAssetFixture(testInfo);
   const requestURLs: string[] = [];
   const assetExchanges: Array<Promise<AssetExchange>> = [];
 
-  await installObjectURLObservation(page);
   page.on("request", (request) => {
     requestURLs.push(request.url());
   });
@@ -285,7 +225,7 @@ test("compiled binary keeps contained images local, inert, and revision-owned", 
   try {
     const shellResponse = await openWorkspace(page);
     const shellHeaders = await shellResponse.allHeaders();
-    expect(imageDirective(shellHeaders["content-security-policy"] ?? "")).toBe("img-src blob:");
+    expect(imageDirective(shellHeaders["content-security-policy"] ?? "")).toBe("img-src 'self'");
     expect(shellHeaders["referrer-policy"]).toBe("no-referrer");
     expect(shellHeaders["x-content-type-options"]).toBe("nosniff");
 
@@ -299,8 +239,9 @@ test("compiled binary keeps contained images local, inert, and revision-owned", 
       page.getByRole("heading", { level: 1, name: "Contained image contract" })
     ).toBeVisible();
 
-    const firstObjectURLs = await decodedImageURLs(page);
+    const firstSources = await decodedImageSources(page);
     await expect(page.locator(".markdown-body img")).toHaveCount(expectedImages.length);
+    expect(firstSources.every((source) => source.startsWith("/api/asset?"))).toBe(true);
 
     await expect(page.getByRole("img", { name: "Image: Remote image", exact: true })).toBeVisible();
     await expect(page.getByRole("img", { name: "Image: Query image", exact: true })).toBeVisible();
@@ -309,18 +250,14 @@ test("compiled binary keeps contained images local, inert, and revision-owned", 
     ).toBeVisible();
     await expect(
       page.getByRole("img", { name: "Image: Escaping image", exact: true })
-    ).toContainText("Image not found. Check the relative path.");
+    ).toContainText("Image could not be loaded.");
     await expect(
       page.getByRole("img", { name: "Image: Missing image", exact: true })
-    ).toContainText("Image not found. Check the relative path.");
+    ).toContainText("Image could not be loaded.");
     await expect(
       page.getByRole("img", { name: "Image: Unsupported SVG", exact: true })
-    ).toContainText("Unsupported image. Use PNG, JPEG, GIF, or WebP.");
+    ).toContainText("Image could not be loaded.");
 
-    const documentMarkup = await page.locator(".markdown-body").evaluate((element) => {
-      return element.innerHTML;
-    });
-    expect(documentMarkup).not.toContain(fixture.assetDirectoryName);
     expect(requestURLs.some((url) => url.includes("images.invalid"))).toBe(false);
 
     const firstExchanges = (await Promise.all(assetExchanges)).filter((exchange) => {
@@ -348,7 +285,7 @@ test("compiled binary keeps contained images local, inert, and revision-owned", 
       expect(exchange?.headers["accept-ranges"]).toBeUndefined();
       expect(exchange?.headers["content-encoding"]).toBeUndefined();
       expect(imageDirective(exchange?.headers["content-security-policy"] ?? "")).toBe(
-        "img-src blob:"
+        "img-src 'self'"
       );
     }
 
@@ -366,22 +303,13 @@ test("compiled binary keeps contained images local, inert, and revision-owned", 
     await expect(
       page.getByRole("heading", { level: 1, name: "Integration workspace" })
     ).toBeVisible();
-    await expect
-      .poll(async () => {
-        const log = await objectURLLog(page);
-        return firstObjectURLs.every(
-          (objectURL) => log.revoked.filter((revoked) => revoked === objectURL).length === 1
-        );
-      })
-      .toBe(true);
 
     await fixtureButton.click();
     await expect(
       page.getByRole("heading", { level: 1, name: "Contained image contract" })
     ).toBeVisible();
-    const secondObjectURLs = await decodedImageURLs(page);
-    expect(secondObjectURLs).not.toEqual(firstObjectURLs);
-    expect(secondObjectURLs.every((url) => !firstObjectURLs.includes(url))).toBe(true);
+    const secondSources = await decodedImageSources(page);
+    expect(secondSources).toEqual(firstSources);
   } finally {
     await removeAssetFixture(fixture);
   }

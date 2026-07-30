@@ -80,8 +80,8 @@ func TestWorkspaceAssetServesOnlyDetectedRasterTypes(t *testing.T) {
 				t.Fatalf("Cache-Control = %q, want no-store", got)
 			}
 			csp := response.Header().Get("Content-Security-Policy")
-			if !strings.Contains(csp, "img-src blob:") ||
-				strings.Contains(csp, "img-src 'self'") ||
+			if !strings.Contains(csp, "img-src 'self'") ||
+				strings.Contains(csp, "img-src blob:") ||
 				strings.Contains(csp, "img-src data:") {
 				t.Fatalf("CSP = %q", csp)
 			}

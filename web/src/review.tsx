@@ -7,7 +7,6 @@ import type {
   TextThreadAnchor,
   ThreadStatus
 } from "./api";
-import type { ImageResourceManager } from "./images/manager";
 import { MarkdownDocument, type DocumentNavigation } from "./markdown/renderer";
 import { mapDomRange, restoreDomRange } from "./markdown/selection";
 import type { RenderModel } from "./markdown/types";
@@ -89,7 +88,6 @@ export function ReviewedDocument({
   currentDocumentPath,
   indexedDocumentPaths,
   onNavigate,
-  imageManager,
   review,
   composer,
   activeThreadId,
@@ -100,7 +98,6 @@ export function ReviewedDocument({
   currentDocumentPath: string;
   indexedDocumentPaths: ReadonlySet<string>;
   onNavigate: (destination: DocumentNavigation) => void;
-  imageManager: ImageResourceManager | null;
   review: ReviewLoad;
   composer: ReviewComposer | null;
   activeThreadId: string | null;
@@ -332,7 +329,6 @@ export function ReviewedDocument({
         currentDocumentPath={currentDocumentPath}
         indexedDocumentPaths={indexedDocumentPaths}
         onNavigate={onNavigate}
-        imageManager={imageManager}
       />
       <div class="review-highlight-layer" aria-hidden="true">
         {rectangles.map((rectangle, index) => (
