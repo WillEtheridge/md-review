@@ -2,6 +2,7 @@
 
 # Local development records and generated browser-test artefacts.
 /.private/
+/docs/
 /test-results/
 /playwright-report/
 
