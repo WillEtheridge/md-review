@@ -8,15 +8,18 @@ plan.md
 plan.md.review.json
 ```
 
-mdReview does not change the Markdown, start an agent, or send comments to an agent. Give the
-sidecar to your agent when the review is complete.
+Use mdReview to read a Markdown file and add threaded comments in the browser. It leaves the
+Markdown unchanged and stores the review in the adjacent sidecar. mdReview does not start an
+agent or send it comments. When the review is ready, give the sidecar to your agent: the included
+Agent Skill lets it find open threads, update the paired Markdown, add a reply, and mark completed
+threads as handled.
 
 ![The mdReview interface with files, a Markdown document, and comments](web/tests/visual/m4-1440.visual.spec.ts-snapshots/rich-discussion-light-chromium-1440-linux.png)
 
 mdReview supports Linux on `amd64` and macOS on Apple silicon (`arm64`). It does not support Windows
 or Intel Mac computers.
 
-## Install
+## Download and run
 
 Open the [GitHub Releases page](https://github.com/WillEtheridge/md-review/releases). Download the
 archive for your operating system.
@@ -32,18 +35,7 @@ Run these commands in the directory that contains the archive:
 
 ```bash
 tar -xzf mdreview-v0.2.0-preview.1-linux-amd64.tar.gz
-mkdir -p "$HOME/.local/bin"
-install -m 0755 \
-  mdreview-v0.2.0-preview.1-linux-amd64/mdreview \
-  "$HOME/.local/bin/mdreview"
-"$HOME/.local/bin/mdreview" --version
-```
-
-If the shell cannot find `mdreview`, add the binary directory to `PATH`:
-
-```bash
-printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.bashrc"
-source "$HOME/.bashrc"
+./mdreview-v0.2.0-preview.1-linux-amd64/mdreview /path/to/project
 ```
 
 ### Apple silicon macOS
@@ -58,13 +50,7 @@ Continue if the output is `arm64`. Run these commands in the directory that cont
 
 ```bash
 tar -xzf mdreview-v0.2.0-preview.1-darwin-arm64.tar.gz
-mkdir -p "$HOME/.local/bin"
-install -m 0755 \
-  mdreview-v0.2.0-preview.1-darwin-arm64/mdreview \
-  "$HOME/.local/bin/mdreview"
-printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.zprofile"
-source "$HOME/.zprofile"
-mdreview --version
+./mdreview-v0.2.0-preview.1-darwin-arm64/mdreview /path/to/project
 ```
 
 The macOS archive is not signed or notarised. If macOS blocks the first start:
@@ -73,14 +59,18 @@ The macOS archive is not signed or notarised. If macOS blocks the first start:
 2. Select **Privacy & Security**.
 3. Find the message about `mdreview`.
 4. Select **Open Anyway**.
-5. Start `mdreview` again.
+5. Start the binary again.
+
+To run `mdreview` from any directory, copy the extracted binary to a directory already on your
+`PATH`.
 
 ### Optional Agent Skill
 
 Install the Agent Skill if you want an agent to find and address review comments. mdReview works
 without the skill.
 
-Run:
+Run the extracted binary with `setup` in place of the project path. If `mdreview` is already on
+your `PATH`, run:
 
 ```bash
 mdreview setup
@@ -284,8 +274,9 @@ rejects SVG and unsupported image types.
 
 ## Update
 
-Stop mdReview. Download the new archive. Repeat the installation procedure for your operating
-system. Your Markdown and sidecars remain in the project.
+Stop mdReview. Download the new archive and repeat the steps for your operating system. If you
+copied the binary to your `PATH`, replace that copy. Your Markdown and sidecars remain in the
+project.
 
 ## Uninstall
 
