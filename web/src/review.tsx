@@ -404,7 +404,6 @@ export type ReviewOperation =
     };
 
 interface OperationEditor {
-  kind: "reply";
   threadId: string;
   expectedDocumentRevision: string;
   expectedReviewRevision: string;
@@ -442,30 +441,89 @@ function OperationComposer({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const bodyBytes = new TextEncoder().encode(editor.draft).length;
-  const empty = editor.draft.trim().length === 0;
+  return (
+    <MessageComposer
+      className="review-composer operation-composer"
+      state={editor.error ? "error" : editor.submitting ? "submitting" : "ready"}
+      inputID={`reply-message-${editor.threadId}`}
+      label="Reply"
+      rows={4}
+      draft={editor.draft}
+      submitting={editor.submitting}
+      error={editor.error}
+      errorDraftMessage="Your draft has been kept."
+      disabledReason={disabledReason}
+      limitSubject="Messages"
+      showByteCount
+      submitLabel="Reply"
+      onDraft={onDraft}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    />
+  );
+}
+
+function MessageComposer({
+  className,
+  state,
+  inputID,
+  label,
+  rows,
+  draft,
+  submitting,
+  error,
+  errorDraftMessage,
+  disabledReason,
+  limitSubject,
+  showByteCount,
+  submitLabel,
+  onDraft,
+  onSubmit,
+  onCancel,
+  children
+}: {
+  className: string;
+  state: "ready" | "submitting" | "error" | "conflict";
+  inputID: string;
+  label: string;
+  rows: number;
+  draft: string;
+  submitting: boolean;
+  error: string | null;
+  errorDraftMessage: string;
+  disabledReason: string | null;
+  limitSubject: "Comments" | "Messages";
+  showByteCount: boolean;
+  submitLabel: string;
+  onDraft: (draft: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  children?: preact.ComponentChildren;
+}) {
+  const bodyBytes = new TextEncoder().encode(draft).length;
+  const empty = draft.trim().length === 0;
   const tooLarge = bodyBytes > MAX_MESSAGE_BODY_BYTES;
-  const label = "Reply";
-  const inputID = `reply-message-${editor.threadId}`;
   const limitID = `${inputID}-limit`;
+  const canSubmit = !empty && !tooLarge && !submitting && disabledReason === null;
 
   return (
     <form
-      class={`review-composer operation-composer operation-composer--${editor.kind}`}
-      data-state={editor.error ? "error" : editor.submitting ? "submitting" : "ready"}
+      class={className}
+      data-state={state}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!empty && !tooLarge && !editor.submitting && disabledReason === null) {
+        if (canSubmit) {
           onSubmit();
         }
       }}
     >
+      {children}
       <label for={inputID}>{label}</label>
       <textarea
         id={inputID}
         autofocus
-        rows={4}
-        value={editor.draft}
+        rows={rows}
+        value={draft}
         aria-describedby={tooLarge ? limitID : undefined}
         aria-invalid={tooLarge || undefined}
         onInput={(event) => {
@@ -475,27 +533,22 @@ function OperationComposer({
           if (event.key === "Escape") {
             event.preventDefault();
             onCancel();
-          } else if (
-            event.key === "Enter" &&
-            (event.ctrlKey || event.metaKey) &&
-            !empty &&
-            !tooLarge &&
-            !editor.submitting &&
-            disabledReason === null
-          ) {
+          } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && canSubmit) {
             event.preventDefault();
             onSubmit();
           }
         }}
       />
-      <p id={tooLarge ? limitID : undefined} class={tooLarge ? "field-error" : "field-help"}>
-        {tooLarge
-          ? "Messages must be no more than 64 KiB of UTF-8."
-          : `${String(bodyBytes)} of ${String(MAX_MESSAGE_BODY_BYTES)} bytes`}
-      </p>
-      {editor.error ? (
+      {tooLarge || showByteCount ? (
+        <p id={tooLarge ? limitID : undefined} class={tooLarge ? "field-error" : "field-help"}>
+          {tooLarge
+            ? `${limitSubject} must be no more than 64 KiB of UTF-8.`
+            : `${String(bodyBytes)} of ${String(MAX_MESSAGE_BODY_BYTES)} bytes`}
+        </p>
+      ) : null}
+      {error ? (
         <p class="composer-error" role="alert">
-          {editor.error} Your draft has been kept.
+          {error} {errorDraftMessage}
         </p>
       ) : null}
       {disabledReason ? (
@@ -504,11 +557,8 @@ function OperationComposer({
         </p>
       ) : null}
       <div class="composer-actions">
-        <button
-          type="submit"
-          disabled={empty || tooLarge || editor.submitting || disabledReason !== null}
-        >
-          {editor.submitting ? "Saving…" : label}
+        <button type="submit" disabled={!canSubmit}>
+          {submitting ? "Saving…" : submitLabel}
         </button>
         <button type="button" onClick={onCancel}>
           Cancel
@@ -715,7 +765,7 @@ function ThreadCard({
           </li>
         ))}
       </ol>
-      {editor?.kind === "reply" && editor.threadId === thread.id ? (
+      {editor?.threadId === thread.id ? (
         <OperationComposer
           editor={editor}
           disabledReason={editorDisabledReason}
@@ -782,6 +832,29 @@ function ThreadCard({
   );
 }
 
+function ThreadSection({
+  headingID,
+  title,
+  threads,
+  renderThread
+}: {
+  headingID: string;
+  title: string;
+  threads: ReviewThread[];
+  renderThread: (thread: ReviewThread) => preact.ComponentChild;
+}) {
+  if (threads.length === 0) {
+    return null;
+  }
+
+  return (
+    <section class="thread-section" aria-labelledby={headingID}>
+      <h3 id={headingID}>{title}</h3>
+      {threads.map(renderThread)}
+    </section>
+  );
+}
+
 function Composer({
   composer,
   disabledReason,
@@ -795,14 +868,10 @@ function Composer({
   onSubmit: () => void;
   onCancel: () => void;
 }) {
-  const bodyBytes = new TextEncoder().encode(composer.draft).length;
-  const empty = composer.draft.trim().length === 0;
-  const tooLarge = bodyBytes > MAX_MESSAGE_BODY_BYTES;
-
   return (
-    <form
-      class="review-composer"
-      data-state={
+    <MessageComposer
+      className="review-composer"
+      state={
         composer.conflict
           ? "conflict"
           : composer.error
@@ -811,76 +880,30 @@ function Composer({
               ? "submitting"
               : "ready"
       }
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!empty && !tooLarge && !composer.submitting && disabledReason === null) {
-          onSubmit();
-        }
-      }}
+      inputID="review-message"
+      label="Comment"
+      rows={6}
+      draft={composer.draft}
+      submitting={composer.submitting}
+      error={composer.error}
+      errorDraftMessage={
+        composer.conflict
+          ? "Your draft and frozen selection have been kept."
+          : "Your draft has been kept."
+      }
+      disabledReason={disabledReason}
+      limitSubject="Comments"
+      showByteCount={false}
+      submitLabel="Save comment"
+      onDraft={onDraft}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
     >
       {composer.kind === "document" ? <h3>Comment on document</h3> : null}
       {composer.kind === "text" && composer.anchor ? (
         <blockquote>{composer.anchor.text || composer.anchor.source}</blockquote>
       ) : null}
-      <label for="review-message">Comment</label>
-      <textarea
-        id="review-message"
-        autofocus
-        rows={6}
-        value={composer.draft}
-        aria-describedby={tooLarge ? "review-message-limit" : undefined}
-        aria-invalid={tooLarge || undefined}
-        onInput={(event) => {
-          onDraft(event.currentTarget.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            event.preventDefault();
-            onCancel();
-          } else if (
-            event.key === "Enter" &&
-            (event.ctrlKey || event.metaKey) &&
-            !empty &&
-            !tooLarge &&
-            !composer.submitting &&
-            disabledReason === null
-          ) {
-            event.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
-      {tooLarge ? (
-        <p id="review-message-limit" class="field-error">
-          Comments must be no more than 64 KiB of UTF-8.
-        </p>
-      ) : null}
-      {composer.error ? (
-        <p class="composer-error" role="alert">
-          {composer.error}
-          {composer.conflict
-            ? " Your draft and frozen selection have been kept."
-            : " Your draft has been kept."}
-        </p>
-      ) : null}
-      {disabledReason ? (
-        <p class="composer-error" role="alert">
-          {disabledReason} Your draft has been kept, but it cannot be submitted.
-        </p>
-      ) : null}
-      <div class="composer-actions">
-        <button
-          type="submit"
-          disabled={empty || tooLarge || composer.submitting || disabledReason !== null}
-        >
-          {composer.submitting ? "Saving…" : "Save comment"}
-        </button>
-        <button type="button" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-      <p class="keyboard-hint">Cmd/Ctrl+Enter to save · Esc to cancel</p>
-    </form>
+    </MessageComposer>
   );
 }
 
@@ -986,7 +1009,6 @@ export function ReviewPanel({
     originRef.current = trigger;
     setActionError(null);
     setEditor({
-      kind: "reply",
       threadId,
       expectedDocumentRevision: documentRevision,
       expectedReviewRevision: readyReview.revision,
@@ -1074,6 +1096,77 @@ export function ReviewPanel({
     });
   };
 
+  const renderThread = (thread: ReviewThread): preact.ComponentChild => (
+    <ThreadCard
+      key={thread.id}
+      thread={thread}
+      active={thread.id === activeThreadId}
+      interactive={!composer && readyReview?.revision !== null}
+      editor={editor?.threadId === thread.id ? editor : null}
+      editorDisabledReason={editorDisabledReason}
+      pending={pendingThreadId === thread.id}
+      actionError={actionError?.threadId === thread.id ? actionError.message : null}
+      onTargetRef={(element) => {
+        if (element) {
+          targetRefs.current.set(thread.id, element);
+        } else {
+          targetRefs.current.delete(thread.id);
+        }
+      }}
+      onSelect={() => {
+        onActiveThread(thread.id);
+      }}
+      onStartReply={(trigger) => {
+        handleStartReply(thread.id, trigger);
+      }}
+      onStatus={(status, trigger) => {
+        if (documentRevision && readyReview?.revision) {
+          handleImmediateOperation(
+            {
+              kind: "status",
+              threadId: thread.id,
+              expectedDocumentRevision: documentRevision,
+              expectedReviewRevision: readyReview.revision,
+              status
+            },
+            trigger
+          );
+        }
+      }}
+      deleteConfirmation={deleteConfirmationThreadId === thread.id}
+      onRequestDelete={(trigger) => {
+        handleRequestDelete(thread.id, trigger);
+      }}
+      onConfirmDelete={(trigger) => {
+        setDeleteConfirmationThreadId(null);
+        if (documentRevision && readyReview?.revision) {
+          handleImmediateOperation(
+            {
+              kind: "delete",
+              threadId: thread.id,
+              expectedDocumentRevision: documentRevision,
+              expectedReviewRevision: readyReview.revision
+            },
+            trigger
+          );
+        }
+      }}
+      onCancelDelete={() => {
+        handleCancelDelete(thread.id);
+      }}
+      onEditorDraft={(draft) => {
+        setEditor((current) => (current ? { ...current, draft, error: null } : current));
+      }}
+      onEditorSubmit={handleEditorSubmit}
+      onEditorCancel={() => {
+        const threadId = editor?.threadId ?? thread.id;
+        setEditor(null);
+        onEditorActiveChange(false);
+        restoreOriginFocus(threadId);
+      }}
+    />
+  );
+
   return (
     <>
       <header class="panel-header review-header">
@@ -1132,156 +1225,18 @@ export function ReviewPanel({
       {readyReview && readyReview.threads.length > 0 && visibleThreads.length === 0 ? (
         <p class="panel-status">No comments match the selected status filters.</p>
       ) : null}
-      {documentThreads.length > 0 ? (
-        <section class="thread-section" aria-labelledby="document-threads-heading">
-          <h3 id="document-threads-heading">Document</h3>
-          {documentThreads.map((thread) => (
-            <ThreadCard
-              key={thread.id}
-              thread={thread}
-              active={thread.id === activeThreadId}
-              interactive={!composer && readyReview?.revision !== null}
-              editor={editor?.threadId === thread.id ? editor : null}
-              editorDisabledReason={editorDisabledReason}
-              pending={pendingThreadId === thread.id}
-              actionError={actionError?.threadId === thread.id ? actionError.message : null}
-              onTargetRef={(element) => {
-                if (element) {
-                  targetRefs.current.set(thread.id, element);
-                } else {
-                  targetRefs.current.delete(thread.id);
-                }
-              }}
-              onSelect={() => {
-                onActiveThread(thread.id);
-              }}
-              onStartReply={(trigger) => {
-                handleStartReply(thread.id, trigger);
-              }}
-              onStatus={(status, trigger) => {
-                if (documentRevision && readyReview?.revision) {
-                  handleImmediateOperation(
-                    {
-                      kind: "status",
-                      threadId: thread.id,
-                      expectedDocumentRevision: documentRevision,
-                      expectedReviewRevision: readyReview.revision,
-                      status
-                    },
-                    trigger
-                  );
-                }
-              }}
-              deleteConfirmation={deleteConfirmationThreadId === thread.id}
-              onRequestDelete={(trigger) => {
-                handleRequestDelete(thread.id, trigger);
-              }}
-              onConfirmDelete={(trigger) => {
-                setDeleteConfirmationThreadId(null);
-                if (documentRevision && readyReview?.revision) {
-                  handleImmediateOperation(
-                    {
-                      kind: "delete",
-                      threadId: thread.id,
-                      expectedDocumentRevision: documentRevision,
-                      expectedReviewRevision: readyReview.revision
-                    },
-                    trigger
-                  );
-                }
-              }}
-              onCancelDelete={() => {
-                handleCancelDelete(thread.id);
-              }}
-              onEditorDraft={(draft) => {
-                setEditor((current) => (current ? { ...current, draft, error: null } : current));
-              }}
-              onEditorSubmit={handleEditorSubmit}
-              onEditorCancel={() => {
-                const threadId = editor?.threadId ?? thread.id;
-                setEditor(null);
-                onEditorActiveChange(false);
-                restoreOriginFocus(threadId);
-              }}
-            />
-          ))}
-        </section>
-      ) : null}
-      {textThreads.length > 0 ? (
-        <section class="thread-section" aria-labelledby="text-threads-heading">
-          <h3 id="text-threads-heading">Text</h3>
-          {textThreads.map((thread) => (
-            <ThreadCard
-              key={thread.id}
-              thread={thread}
-              active={thread.id === activeThreadId}
-              interactive={!composer && readyReview?.revision !== null}
-              editor={editor?.threadId === thread.id ? editor : null}
-              editorDisabledReason={editorDisabledReason}
-              pending={pendingThreadId === thread.id}
-              actionError={actionError?.threadId === thread.id ? actionError.message : null}
-              onTargetRef={(element) => {
-                if (element) {
-                  targetRefs.current.set(thread.id, element);
-                } else {
-                  targetRefs.current.delete(thread.id);
-                }
-              }}
-              onSelect={() => {
-                onActiveThread(thread.id);
-              }}
-              onStartReply={(trigger) => {
-                handleStartReply(thread.id, trigger);
-              }}
-              onStatus={(status, trigger) => {
-                if (documentRevision && readyReview?.revision) {
-                  handleImmediateOperation(
-                    {
-                      kind: "status",
-                      threadId: thread.id,
-                      expectedDocumentRevision: documentRevision,
-                      expectedReviewRevision: readyReview.revision,
-                      status
-                    },
-                    trigger
-                  );
-                }
-              }}
-              deleteConfirmation={deleteConfirmationThreadId === thread.id}
-              onRequestDelete={(trigger) => {
-                handleRequestDelete(thread.id, trigger);
-              }}
-              onConfirmDelete={(trigger) => {
-                setDeleteConfirmationThreadId(null);
-                if (documentRevision && readyReview?.revision) {
-                  handleImmediateOperation(
-                    {
-                      kind: "delete",
-                      threadId: thread.id,
-                      expectedDocumentRevision: documentRevision,
-                      expectedReviewRevision: readyReview.revision
-                    },
-                    trigger
-                  );
-                }
-              }}
-              onCancelDelete={() => {
-                handleCancelDelete(thread.id);
-              }}
-              onEditorDraft={(draft) => {
-                setEditor((current) => (current ? { ...current, draft, error: null } : current));
-              }}
-              onEditorSubmit={handleEditorSubmit}
-              onEditorCancel={() => {
-                const threadId = editor?.threadId ?? thread.id;
-                setEditor(null);
-                onEditorActiveChange(false);
-                restoreOriginFocus(threadId);
-              }}
-            />
-          ))}
-        </section>
-      ) : null}
+      <ThreadSection
+        headingID="document-threads-heading"
+        title="Document"
+        threads={documentThreads}
+        renderThread={renderThread}
+      />
+      <ThreadSection
+        headingID="text-threads-heading"
+        title="Text"
+        threads={textThreads}
+        renderThread={renderThread}
+      />
       {editor && !editorIsMounted ? (
         <section class="thread-section" aria-labelledby="preserved-editor-heading">
           <h3 id="preserved-editor-heading">Reply draft</h3>

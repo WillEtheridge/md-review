@@ -814,7 +814,7 @@ textarea:focus-visible,
 .operation-composer {
   position: static;
   z-index: auto;
-  margin: 0;
+  margin: 0 1rem 1rem;
   padding: 0.875rem 0 0;
   border: 0;
   border-block-start: 1px solid var(--border);
@@ -823,21 +823,11 @@ textarea:focus-visible,
   box-shadow: none;
 }
 
-.operation-composer--reply {
-  margin: 0 1rem 1rem;
-}
-
-.operation-composer[data-state="error"],
-.operation-composer[data-state="conflict"] {
+.operation-composer[data-state="error"] {
   padding: 0.875rem;
   border: 1px solid color-mix(in srgb, var(--color-error) 55%, var(--border));
   border-radius: var(--radius-small);
   background: color-mix(in srgb, var(--color-error-soft) 28%, var(--paper));
-}
-
-.operation-composer[data-state="conflict"] {
-  border-color: var(--color-conflict);
-  background: color-mix(in srgb, var(--color-conflict) 10%, var(--paper));
 }
 
 .review-composer blockquote {
