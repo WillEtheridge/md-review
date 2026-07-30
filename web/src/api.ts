@@ -13,7 +13,6 @@ export const API_ERROR_CODES = [
   "invalidOrigin",
   "documentChanged",
   "reviewChanged",
-  "targetChanged",
   "requestTooLarge",
   "reviewTooLarge",
   "assetUnsupportedType",
@@ -143,17 +142,11 @@ export interface DocumentReviewThread extends ReviewThreadBase {
 
 export type ReviewThread = TextReviewThread | DocumentReviewThread;
 
-export interface TargetFingerprints {
-  threads: Record<string, string>;
-  messages: Record<string, string>;
-}
-
 export interface ReviewResponse {
   path: string;
   documentRevision: string;
   reviewRevision: string | null;
   threads: ReviewThread[];
-  targets?: TargetFingerprints;
 }
 
 export interface CreateThreadRequest {
@@ -172,36 +165,34 @@ export interface CreateThreadResponse {
   thread: ReviewThread;
 }
 
-interface TargetOperationRequest {
+interface ReviewOperationRequest {
   documentPath: string;
   expectedDocumentRevision: string;
   expectedReviewRevision: string | null;
-  targetFingerprint: string;
 }
 
-export interface ReplyRequest extends TargetOperationRequest {
+export interface ReplyRequest extends ReviewOperationRequest {
   message: {
     body: string;
   };
 }
 
-export interface EditMessageRequest extends TargetOperationRequest {
+export interface EditMessageRequest extends ReviewOperationRequest {
   message: {
     body: string;
   };
 }
 
-export interface StatusRequest extends TargetOperationRequest {
+export interface StatusRequest extends ReviewOperationRequest {
   status: "open" | "resolved";
 }
 
-export type DeleteThreadRequest = TargetOperationRequest;
+export type DeleteThreadRequest = ReviewOperationRequest;
 
 export interface MutationResponse {
   documentRevision: string;
   reviewRevision: string;
   thread: ReviewThread;
-  targets: TargetFingerprints;
 }
 
 export interface DeleteThreadResponse {
@@ -213,7 +204,6 @@ export interface DeleteThreadResponse {
 export interface CurrentRevisions {
   documentRevision: string;
   reviewRevision: string | null;
-  targetFingerprint?: string | null;
 }
 
 export interface ErrorEnvelope {
@@ -289,26 +279,6 @@ function revisionValue(value: unknown): string {
 
 function nullableRevisionValue(value: unknown): string | null {
   return value === null ? null : revisionValue(value);
-}
-
-function fingerprintMap(value: unknown): Record<string, string> {
-  const record = recordValue(value);
-  const fingerprints: Record<string, string> = {};
-  for (const [id, fingerprint] of Object.entries(record)) {
-    if (id.length === 0) {
-      throw new ApiProtocolError();
-    }
-    fingerprints[id] = revisionValue(fingerprint);
-  }
-  return fingerprints;
-}
-
-function decodeTargetFingerprints(value: unknown): TargetFingerprints {
-  const record = recordValue(value);
-  return {
-    threads: fingerprintMap(record.threads),
-    messages: fingerprintMap(record.messages)
-  };
 }
 
 function arrayValue(value: unknown): unknown[] {
@@ -549,18 +519,12 @@ function decodeThread(value: unknown): ReviewThread {
 
 export function decodeReview(value: unknown): ReviewResponse {
   const record = recordValue(value);
-  const response: ReviewResponse = {
+  return {
     path: nonEmptyString(record.path),
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: nullableRevisionValue(record.reviewRevision),
     threads: arrayValue(record.threads).map(decodeThread)
   };
-  // Milestone 2 responses remain valid for historical fixtures. Mutation
-  // controls separately require the target fingerprint they operate on.
-  if (record.targets !== undefined) {
-    response.targets = decodeTargetFingerprints(record.targets);
-  }
-  return response;
 }
 
 export function decodeCreateThreadResponse(value: unknown): CreateThreadResponse {
@@ -577,8 +541,7 @@ export function decodeMutationResponse(value: unknown): MutationResponse {
   return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: revisionValue(record.reviewRevision),
-    thread: decodeThread(record.thread),
-    targets: decodeTargetFingerprints(record.targets)
+    thread: decodeThread(record.thread)
   };
 }
 
@@ -593,15 +556,10 @@ export function decodeDeleteThreadResponse(value: unknown): DeleteThreadResponse
 
 function decodeCurrentRevisions(value: unknown): CurrentRevisions {
   const record = recordValue(value);
-  const current: CurrentRevisions = {
+  return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: nullableRevisionValue(record.reviewRevision)
   };
-  if (record.targetFingerprint !== undefined) {
-    current.targetFingerprint =
-      record.targetFingerprint === null ? null : revisionValue(record.targetFingerprint);
-  }
-  return current;
 }
 
 function decodeRequestError(value: unknown): {

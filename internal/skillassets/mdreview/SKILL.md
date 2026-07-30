@@ -34,9 +34,10 @@ Preserve unrelated threads and every unknown schema-version-1 field, including n
 the exact lexemes of arbitrary-precision numbers. Use lossless JSON editing; do not round-trip
 unknown numbers through floating point.
 
-Immediately before replacing a sidecar, reread it and reapply the intended semantic changes to
-those latest bytes. Stop and re-evaluate if a target changed. Write the complete result to a
-same-directory temporary file and atomically replace the sidecar. Treat the final
+Immediately before replacing a sidecar, reread both the Markdown and sidecar. Stop and re-evaluate
+if either whole-file revision changed; do not merge against the latest sidecar or compare only a
+target. Write the complete result to a same-directory temporary file and atomically replace the
+sidecar. Treat the final
 reread-to-rename interval as a residual race with uncoordinated direct writers; do not claim
 lossless multi-writer safety.
 

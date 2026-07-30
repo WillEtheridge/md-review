@@ -81,9 +81,10 @@ unsafe, or oversized sidecars remain read-only and are not repaired.
 ## Sidecar concurrency limitation
 
 Browser mutations are semantic, bounded, and serialised within the process.
-They reread current bytes, preserve unrelated observed schema-version-1 data,
-sync a same-directory temporary file, check the destination revision, and
-atomically rename complete valid JSON.
+Each operation requires the exact Markdown and sidecar revisions the browser
+read; if either changed, the operation is rejected without merging. A single
+same-directory temporary file is synced, the destination revision is checked,
+and complete valid JSON is atomically renamed.
 
 Direct external writers, including coding agents, do not participate in the
 application's lock. An external replacement in the final

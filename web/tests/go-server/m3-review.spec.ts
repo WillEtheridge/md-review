@@ -161,6 +161,4 @@ test("compiled browser completes the keyboard review lifecycle and persists it",
     },
     body: "Agent-authored browser explanation."
   });
-  expect(sidecarText).not.toContain("targetFingerprint");
-  expect(sidecarText).not.toContain('"targets"');
 });

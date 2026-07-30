@@ -1,7 +1,6 @@
 package review
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -25,11 +24,10 @@ const (
 // Snapshot is one review sidecar with attachment state calculated against the
 // current Markdown bytes.
 type Snapshot struct {
-	Path             string             `json:"path"`
-	DocumentRevision string             `json:"documentRevision"`
-	ReviewRevision   *string            `json:"reviewRevision"`
-	Threads          []ResolvedThread   `json:"threads"`
-	Targets          TargetFingerprints `json:"targets"`
+	Path             string           `json:"path"`
+	DocumentRevision string           `json:"documentRevision"`
+	ReviewRevision   *string          `json:"reviewRevision"`
+	Threads          []ResolvedThread `json:"threads"`
 }
 
 // CurrentRevisions identifies the exact files observed while handling a conflict.
@@ -54,30 +52,6 @@ func (conflict *ConflictError) Unwrap() error {
 	return conflict.Kind
 }
 
-// CurrentTargetState identifies the exact files and target observed after a
-// target conflict. TargetFingerprint is nil when the target no longer exists.
-type CurrentTargetState struct {
-	DocumentRevision  string  `json:"documentRevision"`
-	ReviewRevision    *string `json:"reviewRevision"`
-	TargetFingerprint *string `json:"targetFingerprint"`
-}
-
-// TargetChangedError reports that a target changed or disappeared without
-// applying a mutation.
-type TargetChangedError struct {
-	Current CurrentTargetState
-}
-
-// Error implements error.
-func (conflict *TargetChangedError) Error() string {
-	return ErrTargetChanged.Error()
-}
-
-// Unwrap permits errors.Is checks against ErrTargetChanged.
-func (conflict *TargetChangedError) Unwrap() error {
-	return ErrTargetChanged
-}
-
 // CreateThreadInput is the complete semantic operation accepted from the HTTP layer.
 type CreateThreadInput struct {
 	DocumentPath             string
@@ -89,10 +63,9 @@ type CreateThreadInput struct {
 
 // CreateThreadResult describes an applied text- or document-thread creation.
 type CreateThreadResult struct {
-	DocumentRevision string             `json:"documentRevision"`
-	ReviewRevision   string             `json:"reviewRevision"`
-	Thread           ResolvedThread     `json:"thread"`
-	Targets          TargetFingerprints `json:"targets"`
+	DocumentRevision string         `json:"documentRevision"`
+	ReviewRevision   string         `json:"reviewRevision"`
+	Thread           ResolvedThread `json:"thread"`
 }
 
 // ReplyInput identifies one thread and the human reply to append.
@@ -101,7 +74,6 @@ type ReplyInput struct {
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
 	ThreadID                 string
-	TargetFingerprint        string
 	MessageBody              string
 }
 
@@ -111,7 +83,6 @@ type EditMessageInput struct {
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
 	MessageID                string
-	TargetFingerprint        string
 	MessageBody              string
 }
 
@@ -121,7 +92,6 @@ type ChangeStatusInput struct {
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
 	ThreadID                 string
-	TargetFingerprint        string
 	Status                   ThreadStatus
 }
 
@@ -131,15 +101,13 @@ type DeleteThreadInput struct {
 	ExpectedDocumentRevision string
 	ExpectedReviewRevision   string
 	ThreadID                 string
-	TargetFingerprint        string
 }
 
 // MutationResult describes an applied reply, message edit, or status change.
 type MutationResult struct {
-	DocumentRevision string             `json:"documentRevision"`
-	ReviewRevision   string             `json:"reviewRevision"`
-	Thread           ResolvedThread     `json:"thread"`
-	Targets          TargetFingerprints `json:"targets"`
+	DocumentRevision string         `json:"documentRevision"`
+	ReviewRevision   string         `json:"reviewRevision"`
+	Thread           ResolvedThread `json:"thread"`
 }
 
 // DeleteThreadResult describes an applied unreplied-thread deletion.
@@ -158,15 +126,6 @@ type StoreOptions struct {
 	// NewID may be called concurrently for different sidecars and must be safe
 	// for concurrent use. The production generator uses crypto/rand.
 	NewID func(prefix string) (string, error)
-
-	// MutationAttempts bounds retries after an observed direct sidecar change.
-	// Zero uses the filesystem gateway default.
-	MutationAttempts int
-}
-
-type keyedLock struct {
-	mutex      sync.Mutex
-	references int
 }
 
 type gateway interface {
@@ -182,15 +141,12 @@ type gateway interface {
 // Store performs semantic sidecar reads and mutations through a contained
 // filesystem gateway.
 type Store struct {
-	filesystem       gateway
-	now              func() time.Time
-	newID            func(prefix string) (string, error)
-	mutationAttempts int
-
-	// locksMu protects locks and reference counts. A keyed mutex is held only
-	// for one derived sidecar, so unrelated documents can mutate concurrently.
-	locksMu sync.Mutex
-	locks   map[string]*keyedLock
+	filesystem gateway
+	now        func() time.Time
+	newID      func(prefix string) (string, error)
+	// mutex serializes all in-process mutations. External writers remain
+	// outside this protocol and are detected only by the one final file check.
+	mutex sync.Mutex
 }
 
 // NewStore binds a review store to one contained workspace filesystem.
@@ -213,20 +169,10 @@ func newStore(files gateway, options StoreOptions) (*Store, error) {
 	if newID == nil {
 		newID = randomID
 	}
-	if options.MutationAttempts < 0 ||
-		options.MutationAttempts > filesystem.MaxMutationAttempts {
-		return nil, fmt.Errorf(
-			"%w: mutation attempts must be between 0 and %d",
-			ErrInvalidOperation,
-			filesystem.MaxMutationAttempts,
-		)
-	}
 	return &Store{
-		filesystem:       files,
-		now:              now,
-		newID:            newID,
-		mutationAttempts: options.MutationAttempts,
-		locks:            make(map[string]*keyedLock),
+		filesystem: files,
+		now:        now,
+		newID:      newID,
 	}, nil
 }
 
@@ -261,7 +207,6 @@ func (store *Store) Read(ctx context.Context, documentPath string) (Snapshot, er
 			Path:             documentPath,
 			DocumentRevision: Revision(markdown),
 			Threads:          []ResolvedThread{},
-			Targets:          newTargetFingerprints(),
 		}, nil
 	}
 	document, err := Decode(data)
@@ -274,16 +219,11 @@ func (store *Store) Read(ctx context.Context, documentPath string) (Snapshot, er
 		DocumentRevision: Revision(markdown),
 		ReviewRevision:   &revision,
 		Threads:          document.ResolvedThreads(markdown),
-		Targets:          document.targetFingerprints(),
 	}, nil
 }
 
-// CreateThread creates one open thread with one Reviewer-authored message for
-// a document identity already verified against the workspace index. Stale
-// review revisions do not reject this target-free operation; each callback
-// decodes and merges against the latest adjacent sidecar bytes observed before
-// replacement. Uncoordinated direct writers retain the filesystem gateway's
-// documented final revision-check-to-rename race.
+// CreateThread creates one open thread with one Reviewer-authored message.
+// Both files must still have exactly the revisions supplied by the browser.
 func (store *Store) CreateThread(
 	ctx context.Context,
 	input CreateThreadInput,
@@ -308,9 +248,8 @@ func (store *Store) CreateThread(
 	}
 	createdAt := store.now().UTC().Format(time.RFC3339Nano)
 	sidecarPath := deriveSidecarPath(input.DocumentPath)
-
-	unlock := store.lock(sidecarPath)
-	defer unlock()
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
 
 	var (
 		currentDocumentRevision string
@@ -321,8 +260,7 @@ func (store *Store) CreateThread(
 		ctx,
 		sidecarPath,
 		filesystem.MutationOptions{
-			MaxBytes:    limits.MaxReviewSidecarBytes,
-			MaxAttempts: store.mutationAttempts,
+			MaxBytes: limits.MaxReviewSidecarBytes,
 		},
 		func(current []byte, exists bool) ([]byte, error) {
 			markdown, readErr := store.readMarkdown(input.DocumentPath)
@@ -335,34 +273,28 @@ func (store *Store) CreateThread(
 			currentMarkdown = markdown
 			currentDocumentRevision = Revision(markdown)
 
-			document := NewDocument()
 			var reviewRevision *string
 			if exists {
-				decoded, decodeErr := Decode(current)
-				if decodeErr != nil {
-					return nil, decodeErr
-				}
-				document = decoded
 				revision := Revision(current)
 				reviewRevision = &revision
 			}
+			if currentDocumentRevision != input.ExpectedDocumentRevision {
+				return nil, revisionConflict(ErrDocumentChanged, currentDocumentRevision, reviewRevision)
+			}
+			if !sameNullableRevision(input.ExpectedReviewRevision, reviewRevision) {
+				return nil, revisionConflict(ErrReviewChanged, currentDocumentRevision, reviewRevision)
+			}
 
-			anchor, anchorErr := anchorForCurrentDocument(
-				markdown,
-				currentDocumentRevision,
-				input.ExpectedDocumentRevision,
-				input.Anchor,
-			)
-			if anchorErr != nil {
-				if errors.Is(anchorErr, ErrDocumentChanged) {
-					return nil, &ConflictError{
-						Kind: ErrDocumentChanged,
-						Current: CurrentRevisions{
-							DocumentRevision: currentDocumentRevision,
-							ReviewRevision:   reviewRevision,
-						},
-					}
+			document := NewDocument()
+			if exists {
+				var decodeErr error
+				document, decodeErr = Decode(current)
+				if decodeErr != nil {
+					return nil, decodeErr
 				}
+			}
+			anchor, anchorErr := exactAnchor(markdown, input.Anchor)
+			if anchorErr != nil {
 				return nil, anchorErr
 			}
 
@@ -390,13 +322,8 @@ func (store *Store) CreateThread(
 		)
 	}
 
-	emitted, err := Decode(updated)
-	if err != nil {
+	if _, err := Decode(updated); err != nil {
 		return CreateThreadResult{}, fmt.Errorf("%w: decode emitted sidecar: %v", ErrUnavailable, err)
-	}
-	targets, ok := emitted.targetsForThread(createdThread.ID)
-	if !ok {
-		return CreateThreadResult{}, fmt.Errorf("%w: emitted thread is missing", ErrUnavailable)
 	}
 	return CreateThreadResult{
 		DocumentRevision: currentDocumentRevision,
@@ -408,7 +335,6 @@ func (store *Store) CreateThread(
 			Status:     createdThread.Status,
 			Messages:   cloneMessages(createdThread.Messages),
 		},
-		Targets: targets,
 	}, nil
 }
 
@@ -474,28 +400,6 @@ func (store *Store) readMarkdown(documentPath string) ([]byte, error) {
 	return data, err
 }
 
-func (store *Store) lock(sidecarPath string) func() {
-	store.locksMu.Lock()
-	lock := store.locks[sidecarPath]
-	if lock == nil {
-		lock = &keyedLock{}
-		store.locks[sidecarPath] = lock
-	}
-	lock.references++
-	store.locksMu.Unlock()
-
-	lock.mutex.Lock()
-	return func() {
-		lock.mutex.Unlock()
-		store.locksMu.Lock()
-		lock.references--
-		if lock.references == 0 {
-			delete(store.locks, sidecarPath)
-		}
-		store.locksMu.Unlock()
-	}
-}
-
 func validateCreateInput(input CreateThreadInput) error {
 	if err := validateDocumentPath(input.DocumentPath); err != nil {
 		return err
@@ -539,35 +443,30 @@ func validateCreateInput(input CreateThreadInput) error {
 	return nil
 }
 
-func anchorForCurrentDocument(
-	markdown []byte,
-	currentRevision string,
-	expectedRevision string,
-	submitted Anchor,
-) (Anchor, error) {
+func exactAnchor(markdown []byte, submitted Anchor) (Anchor, error) {
 	if submitted.Type == AnchorDocument {
 		return Anchor{Type: AnchorDocument}, nil
 	}
-	if currentRevision == expectedRevision {
-		rangeValue := submitted.Range
-		if rangeValue.End > uint64(len(markdown)) ||
-			!stringMatchesRange(markdown, *rangeValue, submitted.Source) {
-			return Anchor{}, fmt.Errorf("%w: anchor source does not match its range", ErrInvalidOperation)
-		}
-		return cloneAnchor(submitted), nil
+	rangeValue := submitted.Range
+	if rangeValue.End > uint64(len(markdown)) ||
+		!stringMatchesRange(markdown, *rangeValue, submitted.Source) {
+		return Anchor{}, fmt.Errorf("%w: anchor source does not match its range", ErrInvalidOperation)
 	}
+	return cloneAnchor(submitted), nil
+}
 
-	source := []byte(submitted.Source)
-	first := bytes.Index(markdown, source)
-	if first < 0 {
-		return Anchor{}, ErrDocumentChanged
+func sameNullableRevision(expected, actual *string) bool {
+	if expected == nil || actual == nil {
+		return expected == nil && actual == nil
 	}
-	if bytes.Index(markdown[first+1:], source) >= 0 {
-		return Anchor{}, ErrDocumentChanged
-	}
-	rebased := cloneAnchor(submitted)
-	rebased.Range = &ByteRange{Start: uint64(first), End: uint64(first + len(submitted.Source))}
-	return rebased, nil
+	return *expected == *actual
+}
+
+func revisionConflict(kind error, documentRevision string, reviewRevision *string) *ConflictError {
+	return &ConflictError{Kind: kind, Current: CurrentRevisions{
+		DocumentRevision: documentRevision,
+		ReviewRevision:   reviewRevision,
+	}}
 }
 
 func stringMatchesRange(markdown []byte, rangeValue ByteRange, source string) bool {

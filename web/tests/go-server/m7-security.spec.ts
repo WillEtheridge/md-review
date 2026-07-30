@@ -14,9 +14,6 @@ import {
 interface ReviewSnapshot {
   documentRevision: string;
   reviewRevision: string;
-  targets: {
-    threads: Record<string, string>;
-  };
 }
 
 interface ServerEnvironment {
@@ -351,18 +348,12 @@ test("m7 compiled browser rejects second-origin attacks and keeps navigation loc
     await writeFile(documentFile, markdown, "utf8");
     await writeFile(sidecarFile, sidecar, "utf8");
     const review = await waitForIndexedReview(request, environment, documentPath);
-    const fingerprint = review.targets.threads[threadID];
-    expect(fingerprint).toMatch(/^[0-9a-f]{64}$/u);
-    if (!fingerprint) {
-      throw new Error("M7 security fixture has no thread fingerprint");
-    }
     const route = `${environment.baseURL}/api/threads/${encodedIDSegment(threadID)}/status`;
     const operation = {
       documentPath,
       expectedDocumentRevision: review.documentRevision,
       expectedReviewRevision: review.reviewRevision,
-      status: "resolved",
-      targetFingerprint: fingerprint
+      status: "resolved"
     };
     const unchangedSidecar = async () => {
       expect(await readFile(sidecarFile, "utf8")).toBe(sidecar);

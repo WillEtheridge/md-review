@@ -25,21 +25,12 @@ interface ReviewSnapshot {
   documentRevision: string;
   reviewRevision: string;
   threads: ReviewThread[];
-  targets: {
-    threads: Record<string, string>;
-    messages: Record<string, string>;
-  };
 }
 
 interface MutationResponse {
   documentRevision: string;
   reviewRevision: string;
-  durability: "durable" | "uncertain";
   thread: ReviewThread;
-  targets: {
-    threads: Record<string, string>;
-    messages: Record<string, string>;
-  };
 }
 
 interface ServerEnvironment {
@@ -69,15 +60,6 @@ function mutationHeaders(environment: ServerEnvironment): Record<string, string>
 
 function encodedIDSegment(id: string): string {
   return `~${Buffer.from(id, "utf8").toString("base64url")}`;
-}
-
-function targetFingerprint(targets: Record<string, string>, id: string): string {
-  const fingerprint = targets[id];
-  expect(fingerprint, `missing fingerprint for ${JSON.stringify(id)}`).toMatch(/^[0-9a-f]{64}$/u);
-  if (!fingerprint) {
-    throw new Error(`missing fingerprint for ${JSON.stringify(id)}`);
-  }
-  return fingerprint;
 }
 
 function findThread(review: ReviewSnapshot, id: string): ReviewThread {
@@ -128,66 +110,23 @@ async function expectError(
   return body;
 }
 
-function commonTargetRequest(
+function commonRevisionRequest(
   documentPath: string,
-  review: ReviewSnapshot,
-  fingerprint: string
+  review: ReviewSnapshot
 ): {
   documentPath: string;
   expectedDocumentRevision: string;
   expectedReviewRevision: string;
-  targetFingerprint: string;
 } {
   return {
     documentPath,
     expectedDocumentRevision: review.documentRevision,
-    expectedReviewRevision: review.reviewRevision,
-    targetFingerprint: fingerprint
+    expectedReviewRevision: review.reviewRevision
   };
 }
 
 function sha256(content: string | Buffer): string {
   return createHash("sha256").update(content).digest("hex");
-}
-
-function exactTargetJSON(sidecar: string, id: string): string {
-  const marker = `"id": ${JSON.stringify(id)}`;
-  const idPosition = sidecar.indexOf(marker);
-  if (idPosition < 0) {
-    throw new Error(`sidecar has no target ${JSON.stringify(id)}`);
-  }
-  const objectStart = sidecar.lastIndexOf("{", idPosition);
-  if (objectStart < 0) {
-    throw new Error(`sidecar target ${JSON.stringify(id)} has no object start`);
-  }
-
-  let depth = 0;
-  let insideString = false;
-  let escaped = false;
-  for (let position = objectStart; position < sidecar.length; position += 1) {
-    const character = sidecar[position];
-    if (insideString) {
-      if (escaped) {
-        escaped = false;
-      } else if (character === "\\") {
-        escaped = true;
-      } else if (character === '"') {
-        insideString = false;
-      }
-      continue;
-    }
-    if (character === '"') {
-      insideString = true;
-    } else if (character === "{") {
-      depth += 1;
-    } else if (character === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return sidecar.slice(objectStart, position + 1);
-      }
-    }
-  }
-  throw new Error(`sidecar target ${JSON.stringify(id)} has no object end`);
 }
 
 async function replaceExactly(path: string, before: string, after: string): Promise<void> {
@@ -214,11 +153,7 @@ test("compiled server completes the human lifecycle and persists only sidecar da
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          review,
-          targetFingerprint(review.targets.threads, "thread_workflow")
-        ),
+        ...commonRevisionRequest(documentPath, review),
         message: {
           body: "A human follow-up from the compiled API."
         }
@@ -237,7 +172,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
     body: "A human follow-up from the compiled API."
   });
   expect(mutation.thread.messages[1]?.id).toMatch(/^message_[A-Za-z0-9_-]{22,}$/u);
-  expect(mutation.durability).toBe("durable");
 
   const originalCreatedAt = findMessage(mutation.thread, "message_human").createdAt;
   const editResponse = await request.patch(
@@ -248,7 +182,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
         documentPath,
         expectedDocumentRevision: mutation.documentRevision,
         expectedReviewRevision: mutation.reviewRevision,
-        targetFingerprint: targetFingerprint(mutation.targets.messages, "message_human"),
         message: {
           body: "Edited human feedback."
         }
@@ -275,7 +208,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
         documentPath,
         expectedDocumentRevision: mutation.documentRevision,
         expectedReviewRevision: mutation.reviewRevision,
-        targetFingerprint: targetFingerprint(mutation.targets.threads, "thread_workflow"),
         status: "resolved"
       })
     }
@@ -292,7 +224,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
         documentPath,
         expectedDocumentRevision: mutation.documentRevision,
         expectedReviewRevision: mutation.reviewRevision,
-        targetFingerprint: targetFingerprint(mutation.targets.threads, "thread_workflow"),
         status: "open"
       })
     }
@@ -310,7 +241,6 @@ test("compiled server completes the human lifecycle and persists only sidecar da
           documentPath,
           expectedDocumentRevision: mutation.documentRevision,
           expectedReviewRevision: mutation.reviewRevision,
-          targetFingerprint: targetFingerprint(mutation.targets.threads, "thread_workflow"),
           status
         })
       }
@@ -324,11 +254,7 @@ test("compiled server completes the human lifecycle and persists only sidecar da
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          review,
-          targetFingerprint(review.targets.messages, "message_agent")
-        ),
+        ...commonRevisionRequest(documentPath, review),
         message: {
           body: "A browser must not edit this."
         }
@@ -342,11 +268,7 @@ test("compiled server completes the human lifecycle and persists only sidecar da
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          review,
-          targetFingerprint(review.targets.threads, "thread_agent")
-        )
+        ...commonRevisionRequest(documentPath, review)
       })
     }
   );
@@ -357,11 +279,7 @@ test("compiled server completes the human lifecycle and persists only sidecar da
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          review,
-          targetFingerprint(review.targets.threads, "thread_delete")
-        )
+        ...commonRevisionRequest(documentPath, review)
       })
     }
   );
@@ -369,12 +287,10 @@ test("compiled server completes the human lifecycle and persists only sidecar da
   const deleted = (await deleteResponse.json()) as {
     documentRevision: string;
     reviewRevision: string;
-    durability: string;
     deletedThreadId: string;
   };
   expect(deleted).toMatchObject({
     documentRevision: review.documentRevision,
-    durability: "durable",
     deletedThreadId: "thread_delete"
   });
 
@@ -390,24 +306,12 @@ test("compiled server completes the human lifecycle and persists only sidecar da
 
   const exactSidecar = await readFile(sidecarPath, "utf8");
   expect(sha256(exactSidecar)).toBe(restored.reviewRevision);
-  expect(sha256(exactTargetJSON(exactSidecar, "thread_workflow"))).toBe(
-    targetFingerprint(restored.targets.threads, "thread_workflow")
-  );
-  expect(sha256(exactTargetJSON(exactSidecar, "message_human"))).toBe(
-    targetFingerprint(restored.targets.messages, "message_human")
-  );
-  for (const transportOnlyField of [
-    '"attachment"',
-    '"targets"',
-    '"targetFingerprint"',
-    '"documentRevision"',
-    '"reviewRevision"'
-  ]) {
+  for (const transportOnlyField of ['"attachment"', '"documentRevision"', '"reviewRevision"']) {
     expect(exactSidecar).not.toContain(transportOnlyField);
   }
 });
 
-test("compiled server merges unrelated external changes and rejects a changed target", async ({
+test("compiled server rejects every stale sidecar revision without writing", async ({
   request
 }, testInfo) => {
   const environment = serverEnvironment();
@@ -420,62 +324,36 @@ test("compiled server merges unrelated external changes and rejects a changed ta
     "Unrelated original body.",
     "Unrelated externally changed body."
   );
-  const mergedResponse = await request.post(
+  const staleReply = await request.post(
     `${environment.baseURL}/api/threads/${encodedIDSegment("thread_target")}/messages`,
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          initial,
-          targetFingerprint(initial.targets.threads, "thread_target")
-        ),
+        ...commonRevisionRequest(documentPath, initial),
         message: {
-          body: "Merge this reply beside the unrelated external change."
+          body: "This reply must not merge with an external sidecar change."
         }
       })
     }
   );
-  expect(mergedResponse.status()).toBe(201);
-  const merged = (await mergedResponse.json()) as MutationResponse;
-  const mergedSidecar = await readFile(sidecarPath, "utf8");
-  expect(mergedSidecar).toContain("Unrelated externally changed body.");
-  expect(mergedSidecar).toContain("Merge this reply beside the unrelated external change.");
-
-  await replaceExactly(sidecarPath, "Target original body.", "Target externally changed body.");
-  const targetConflict = await request.patch(
-    `${environment.baseURL}/api/threads/${encodedIDSegment("thread_target")}/status`,
-    {
-      headers: mutationHeaders(environment),
-      data: JSON.stringify({
-        documentPath,
-        expectedDocumentRevision: merged.documentRevision,
-        expectedReviewRevision: merged.reviewRevision,
-        targetFingerprint: targetFingerprint(merged.targets.threads, "thread_target"),
-        status: "resolved"
-      })
-    }
-  );
-  const conflict = (await expectError(targetConflict, 409, "targetChanged")) as unknown as {
+  const conflict = (await expectError(staleReply, 409, "reviewChanged")) as unknown as {
     current: {
       documentRevision: string;
-      reviewRevision: string;
-      targetFingerprint: string | null;
+      reviewRevision: string | null;
     };
   };
-  expect(conflict.current.documentRevision).toBe(merged.documentRevision);
+  const externallyChangedSidecar = await readFile(sidecarPath, "utf8");
+  expect(conflict.current.documentRevision).toBe(initial.documentRevision);
   expect(conflict.current.reviewRevision).toBe(sha256(await readFile(sidecarPath, "utf8")));
-  expect(conflict.current.targetFingerprint).toBe(
-    sha256(exactTargetJSON(await readFile(sidecarPath, "utf8"), "thread_target"))
-  );
-  expect(conflict.current.targetFingerprint).not.toBe(
-    targetFingerprint(merged.targets.threads, "thread_target")
+  expect(externallyChangedSidecar).toContain("Unrelated externally changed body.");
+  expect(externallyChangedSidecar).not.toContain(
+    "This reply must not merge with an external sidecar change."
   );
 
   const afterConflict = await readReview(request, environment, documentPath);
   expect(findThread(afterConflict, "thread_target").status).toBe("open");
   expect(findMessage(findThread(afterConflict, "thread_target"), "message_target").body).toBe(
-    "Target externally changed body."
+    "Target original body."
   );
 });
 
@@ -497,11 +375,7 @@ test("compiled server routes opaque IDs as one base64url segment", async ({
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          initial,
-          targetFingerprint(initial.targets.threads, threadID)
-        ),
+        ...commonRevisionRequest(documentPath, initial),
         message: {
           body: "The encoded route kept every opaque character."
         }
@@ -520,7 +394,6 @@ test("compiled server routes opaque IDs as one base64url segment", async ({
         documentPath,
         expectedDocumentRevision: replied.documentRevision,
         expectedReviewRevision: replied.reviewRevision,
-        targetFingerprint: targetFingerprint(replied.targets.messages, messageID),
         message: {
           body: "Opaque message ID edited safely."
         }
@@ -541,21 +414,12 @@ test("compiled server scopes identical target IDs to the requested document", as
   const sidecarBPath = join(environment.workspace, `${documentB}.review.json`);
   const beforeB = await readFile(sidecarBPath, "utf8");
   const reviewA = await readReview(request, environment, documentA);
-  const reviewB = await readReview(request, environment, documentB);
-  expect(targetFingerprint(reviewA.targets.threads, "thread_shared")).not.toBe(
-    targetFingerprint(reviewB.targets.threads, "thread_shared")
-  );
-
   const resolveA = await request.patch(
     `${environment.baseURL}/api/threads/${encodedIDSegment("thread_shared")}/status`,
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentA,
-          reviewA,
-          targetFingerprint(reviewA.targets.threads, "thread_shared")
-        ),
+        ...commonRevisionRequest(documentA, reviewA),
         status: "resolved"
       })
     }
@@ -583,11 +447,7 @@ test("compiled server enforces mutation media, origin, and limits", async ({
   const review = await readReview(request, environment, documentPath);
   const route = `${environment.baseURL}/api/threads/${encodedIDSegment("thread_security")}/messages`;
   const operation = {
-    ...commonTargetRequest(
-      documentPath,
-      review,
-      targetFingerprint(review.targets.threads, "thread_security")
-    ),
+    ...commonRevisionRequest(documentPath, review),
     message: {
       body: "A valid reply."
     }
@@ -715,11 +575,7 @@ test("compiled server accepts a direct agent reply before human resolution", asy
     {
       headers: mutationHeaders(environment),
       data: JSON.stringify({
-        ...commonTargetRequest(
-          documentPath,
-          externallyUpdated,
-          targetFingerprint(externallyUpdated.targets.threads, "thread_external")
-        ),
+        ...commonRevisionRequest(documentPath, externallyUpdated),
         status: "resolved"
       })
     }

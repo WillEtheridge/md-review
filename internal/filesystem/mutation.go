@@ -14,15 +14,9 @@ import (
 	"path/filepath"
 )
 
-const (
-	DefaultMutationAttempts = 3
-	MaxMutationAttempts     = 16
-)
-
-// MutationOptions bounds file content and semantic retry work.
+// MutationOptions bounds replacement file content.
 type MutationOptions struct {
-	MaxBytes    int64
-	MaxAttempts int
+	MaxBytes int64
 }
 
 // MutationCallback derives complete replacement bytes from current content.
@@ -51,7 +45,7 @@ func (filesystem *FS) MutateFile(
 	options MutationOptions,
 	callback MutationCallback,
 ) ([]byte, error) {
-	attempts, err := validateMutationOptions(options, callback)
+	err := validateMutationOptions(options, callback)
 	if err != nil {
 		return nil, err
 	}
@@ -85,110 +79,93 @@ func (filesystem *FS) MutateFile(
 		hook()
 	}
 
-	for attempt := 1; attempt <= attempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		before, err := filesystem.readMutationTarget(targetPath, relativePath, options.MaxBytes)
-		if err != nil {
-			return nil, classifyMutationError("read current file", err)
-		}
-		updated, err := callback(append([]byte(nil), before.data...), before.exists)
-		if err != nil {
-			return nil, err
-		}
-		if int64(len(updated)) > options.MaxBytes {
-			return nil, ErrMutationTooLarge
-		}
-		emitted := append([]byte(nil), updated...)
+	before, err := filesystem.readMutationTarget(targetPath, relativePath, options.MaxBytes)
+	if err != nil {
+		return nil, classifyMutationError("read current file", err)
+	}
+	updated, err := callback(append([]byte(nil), before.data...), before.exists)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(updated)) > options.MaxBytes {
+		return nil, ErrMutationTooLarge
+	}
+	emitted := append([]byte(nil), updated...)
 
-		temporary, temporaryPath, err := createMutationTemporary(parentPath, before)
-		if err != nil {
-			return nil, classifyMutationError("create temporary file", err)
+	temporary, temporaryPath, err := createMutationTemporary(parentPath, before)
+	if err != nil {
+		return nil, classifyMutationError("create temporary file", err)
+	}
+	temporaryClosed := false
+	renamed := false
+	cleanup := func() {
+		if !temporaryClosed {
+			_ = temporary.Close()
+			temporaryClosed = true
 		}
-		temporaryClosed := false
-		renamed := false
-		cleanup := func() {
-			if !temporaryClosed {
-				_ = temporary.Close()
-				temporaryClosed = true
-			}
-			if !renamed {
-				_ = os.Remove(temporaryPath)
-			}
+		if !renamed {
+			_ = os.Remove(temporaryPath)
 		}
+	}
 
-		if err := filesystem.writeMutationTemporary(attempt, temporary, emitted); err != nil {
-			cleanup()
-			return nil, classifyMutationError("write temporary file", err)
-		}
-		if hook := filesystem.hooks.mutation.beforeTemporarySync; hook != nil {
-			if err := hook(attempt); err != nil {
-				cleanup()
-				return nil, classifyMutationError("sync temporary file", err)
-			}
-		}
-		if err := temporary.Sync(); err != nil {
+	if err := filesystem.writeMutationTemporary(1, temporary, emitted); err != nil {
+		cleanup()
+		return nil, classifyMutationError("write temporary file", err)
+	}
+	if hook := filesystem.hooks.mutation.beforeTemporarySync; hook != nil {
+		if err := hook(1); err != nil {
 			cleanup()
 			return nil, classifyMutationError("sync temporary file", err)
 		}
-		if err := temporary.Close(); err != nil {
-			temporaryClosed = true
-			cleanup()
-			return nil, classifyMutationError("close temporary file", err)
-		}
+	}
+	if err := temporary.Sync(); err != nil {
+		cleanup()
+		return nil, classifyMutationError("sync temporary file", err)
+	}
+	if err := temporary.Close(); err != nil {
 		temporaryClosed = true
+		cleanup()
+		return nil, classifyMutationError("close temporary file", err)
+	}
+	temporaryClosed = true
 
-		if hook := filesystem.hooks.mutation.beforeFinalRead; hook != nil {
-			hook(attempt)
-		}
-		current, err := filesystem.readMutationTarget(targetPath, relativePath, options.MaxBytes)
-		if err != nil {
-			cleanup()
-			return nil, classifyMutationError("reread current file", err)
-		}
-		if current.exists != before.exists || !bytes.Equal(current.data, before.data) {
-			cleanup()
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			cleanup()
-			return nil, err
-		}
-
-		// External writers do not share this protocol, so a replacement after
-		// this exact check and before rename can still be overwritten.
-		if hook := filesystem.hooks.mutation.afterFinalCheck; hook != nil {
-			hook(attempt)
-		}
-		if err := os.Rename(temporaryPath, targetPath); err != nil {
-			cleanup()
-			return nil, classifyMutationError("replace destination", err)
-		}
-		renamed = true
-		return emitted, nil
+	if hook := filesystem.hooks.mutation.beforeFinalRead; hook != nil {
+		hook(1)
+	}
+	current, err := filesystem.readMutationTarget(targetPath, relativePath, options.MaxBytes)
+	if err != nil {
+		cleanup()
+		return nil, classifyMutationError("reread current file", err)
+	}
+	if current.exists != before.exists || !bytes.Equal(current.data, before.data) {
+		cleanup()
+		return nil, ErrMutationConflict
+	}
+	if err := ctx.Err(); err != nil {
+		cleanup()
+		return nil, err
 	}
 
-	return nil, fmt.Errorf(
-		"%w after %d attempts",
-		ErrMutationConflict,
-		attempts,
-	)
+	// External writers do not share this protocol, so a replacement after
+	// this exact check and before rename can still be overwritten.
+	if hook := filesystem.hooks.mutation.afterFinalCheck; hook != nil {
+		hook(1)
+	}
+	if err := os.Rename(temporaryPath, targetPath); err != nil {
+		cleanup()
+		return nil, classifyMutationError("replace destination", err)
+	}
+	renamed = true
+	return emitted, nil
 }
 
-func validateMutationOptions(options MutationOptions, callback MutationCallback) (int, error) {
+func validateMutationOptions(options MutationOptions, callback MutationCallback) error {
 	if callback == nil ||
 		options.MaxBytes < 0 ||
-		options.MaxBytes == math.MaxInt64 ||
-		options.MaxAttempts < 0 ||
-		options.MaxAttempts > MaxMutationAttempts {
-		return 0, ErrInvalidMutationOptions
+		options.MaxBytes == math.MaxInt64 {
+		return ErrInvalidMutationOptions
 	}
-	attempts := options.MaxAttempts
-	if attempts == 0 {
-		attempts = DefaultMutationAttempts
-	}
-	return attempts, nil
+	return nil
 }
 
 func (filesystem *FS) readMutationTarget(

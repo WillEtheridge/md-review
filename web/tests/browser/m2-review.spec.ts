@@ -548,7 +548,7 @@ test("retains a failed draft and frozen selection, then reloads after cancellati
     await fulfillJson(route, 409, {
       error: {
         code: "documentChanged",
-        message: "The selected source changed or is no longer unique.",
+        message: "The document changed on disk. Your change was not submitted.",
         requestId: "request-conflict"
       },
       current: {
@@ -571,7 +571,7 @@ test("retains a failed draft and frozen selection, then reloads after cancellati
   await page.getByRole("button", { name: "Save comment" }).click();
 
   await expect(page.getByRole("alert")).toContainText(
-    "The selected source changed or is no longer unique."
+    "The document or review changed on disk. Reload before trying again."
   );
   await expect(page.getByRole("alert")).toContainText("draft and frozen selection have been kept");
   await expect(textarea).toHaveValue("Keep this draft through the conflict.");

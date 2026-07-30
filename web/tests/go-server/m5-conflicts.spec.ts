@@ -16,15 +16,13 @@ interface ServerEnvironment {
 }
 
 interface ReviewSnapshot {
+  documentRevision: string;
   reviewRevision: string;
-  targets: {
-    threads: Record<string, string>;
-    messages: Record<string, string>;
-  };
 }
 
 interface MutationBody {
-  targetFingerprint?: string;
+  expectedDocumentRevision?: string;
+  expectedReviewRevision?: string;
 }
 
 type EditorKind = "reply" | "edit";
@@ -97,19 +95,6 @@ async function readReview(
   return (await response.json()) as ReviewSnapshot;
 }
 
-function requiredFingerprint(
-  targets: Record<string, string>,
-  targetID: string,
-  label: string
-): string {
-  const fingerprint = targets[targetID];
-  expect(fingerprint, `${label} fingerprint is missing`).toMatch(/^[0-9a-f]{64}$/u);
-  if (!fingerprint) {
-    throw new Error(`${label} fingerprint is missing`);
-  }
-  return fingerprint;
-}
-
 async function openFixture(
   context: BrowserContext,
   environment: ServerEnvironment,
@@ -168,7 +153,7 @@ function editor(page: Page, kind: EditorKind) {
 }
 
 for (const kind of ["reply", "edit"] as const) {
-  test(`two independent tabs retain stale ${kind} drafts after real sidecar target conflicts`, async ({
+  test(`two independent tabs retain stale ${kind} drafts after whole-sidecar revision conflicts`, async ({
     browser,
     request
   }, testInfo) => {
@@ -203,10 +188,6 @@ for (const kind of ["reply", "edit"] as const) {
       const secondDraft = `Second tab independent ${kind} draft`;
 
       const initialReview = await readReview(request, environment, documentPath);
-      const initialFingerprint =
-        kind === "reply"
-          ? requiredFingerprint(initialReview.targets.threads, threadID, "initial thread")
-          : requiredFingerprint(initialReview.targets.messages, messageID, "initial message");
 
       await Promise.all([
         openEditor(firstPage, kind, firstDraft),
@@ -222,33 +203,36 @@ for (const kind of ["reply", "edit"] as const) {
       await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
 
       const changedReview = await readReview(request, environment, documentPath);
-      const changedFingerprint =
-        kind === "reply"
-          ? requiredFingerprint(changedReview.targets.threads, threadID, "changed thread")
-          : requiredFingerprint(changedReview.targets.messages, messageID, "changed message");
-      expect(changedFingerprint).not.toBe(initialFingerprint);
       expect(changedReview.reviewRevision).not.toBe(initialReview.reviewRevision);
 
       await editor(firstPage, kind).press("Control+Enter");
       await expect(
-        firstPage.getByRole("alert").filter({ hasText: "This review item changed on disk." })
+        firstPage.getByRole("alert").filter({
+          hasText: "The document or review changed on disk. Reload before trying again."
+        })
       ).toBeVisible();
       await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
       await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
 
       await editor(secondPage, kind).press("Control+Enter");
       await expect(
-        secondPage.getByRole("alert").filter({ hasText: "This review item changed on disk." })
+        secondPage.getByRole("alert").filter({
+          hasText: "The document or review changed on disk. Reload before trying again."
+        })
       ).toBeVisible();
       await expect(editor(firstPage, kind)).toHaveValue(firstDraft);
       await expect(editor(secondPage, kind)).toHaveValue(secondDraft);
 
       expect(firstMutationBodies).toHaveLength(1);
       expect(secondMutationBodies).toHaveLength(1);
-      expect(firstMutationBodies[0]?.targetFingerprint).toBe(initialFingerprint);
-      expect(secondMutationBodies[0]?.targetFingerprint).toBe(initialFingerprint);
-      expect(firstMutationBodies[0]?.targetFingerprint).not.toBe(changedFingerprint);
-      expect(secondMutationBodies[0]?.targetFingerprint).not.toBe(changedFingerprint);
+      expect(firstMutationBodies[0]).toMatchObject({
+        expectedDocumentRevision: initialReview.documentRevision,
+        expectedReviewRevision: initialReview.reviewRevision
+      });
+      expect(secondMutationBodies[0]).toMatchObject({
+        expectedDocumentRevision: initialReview.documentRevision,
+        expectedReviewRevision: initialReview.reviewRevision
+      });
 
       const finalSidecar = await readFile(sidecarFile, "utf8");
       expect(finalSidecar).toBe(externalSidecar);

@@ -29,14 +29,13 @@ var (
 	// ErrInvalidOperation indicates an invalid browser-originated semantic operation.
 	ErrInvalidOperation = errors.New("invalid review operation")
 
-	// ErrDocumentChanged indicates a stale text anchor cannot be rebased exactly once.
+	// ErrDocumentChanged indicates the Markdown no longer matches the browser's
+	// whole-document revision.
 	ErrDocumentChanged = errors.New("document changed")
 
-	// ErrReviewChanged indicates bounded semantic mutation retries were exhausted.
-	ErrReviewChanged = errors.New("review sidecar kept changing")
-
-	// ErrTargetChanged indicates an exact thread or message target changed or disappeared.
-	ErrTargetChanged = errors.New("review target changed")
+	// ErrReviewChanged indicates the adjacent sidecar no longer matches the
+	// browser's whole-sidecar revision.
+	ErrReviewChanged = errors.New("review sidecar changed")
 
 	// ErrUnsafe indicates the derived sidecar is a symlink or non-regular file.
 	ErrUnsafe = errors.New("review sidecar is unsafe")

@@ -28,7 +28,7 @@ interface VisualState {
       | "reviewUnsupportedSchema";
     message: string;
   };
-  targetConflict?: boolean;
+  revisionConflict?: boolean;
 }
 
 interface VisualSession {
@@ -239,7 +239,7 @@ export function conflictState(): VisualState {
         )
       ])
     ],
-    targetConflict: true
+    revisionConflict: true
   };
 }
 
@@ -259,31 +259,6 @@ export function documentErrorState(): VisualState {
       code: "documentInvalidUtf8",
       message: "This Markdown file is not valid UTF-8."
     }
-  };
-}
-
-function targetFingerprints(threads: readonly VisualThread[]): {
-  threads: Record<string, string>;
-  messages: Record<string, string>;
-} {
-  const threadTargets: Record<string, string> = {};
-  const messageTargets: Record<string, string> = {};
-  for (const [threadIndex, thread] of threads.entries()) {
-    threadTargets[thread.id] = String(threadIndex + 1).repeat(64);
-    for (const [messageIndex, message] of thread.messages.entries()) {
-      if (
-        typeof message === "object" &&
-        message !== null &&
-        "id" in message &&
-        typeof message.id === "string"
-      ) {
-        messageTargets[message.id] = String(((threadIndex + messageIndex + 2) % 9) + 1).repeat(64);
-      }
-    }
-  }
-  return {
-    threads: threadTargets,
-    messages: messageTargets
   };
 }
 
@@ -396,27 +371,25 @@ async function fulfillAPI(route: Route, state: VisualState): Promise<void> {
       path: documentPath,
       documentRevision,
       reviewRevision,
-      threads: state.threads,
-      targets: targetFingerprints(state.threads)
+      threads: state.threads
     });
     return;
   }
 
   if (
-    state.targetConflict &&
+    state.revisionConflict &&
     request.method() === "POST" &&
     requestURL.pathname.endsWith("/messages")
   ) {
     await fulfillJSON(route, 409, {
       error: {
-        code: "targetChanged",
-        message: "This review target changed on disk. Your change was not submitted.",
+        code: "reviewChanged",
+        message: "The review changed on disk. Your change was not submitted.",
         requestId: "request_m4_conflict"
       },
       current: {
         documentRevision,
-        reviewRevision: "f".repeat(64),
-        targetFingerprint: null
+        reviewRevision: "f".repeat(64)
       }
     });
     return;

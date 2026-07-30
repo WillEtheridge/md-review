@@ -30,15 +30,12 @@
 0644 internal/review/review.go
 0644 internal/review/review_test.go
 0644 internal/review/store.go
-0644 internal/review/store_m3.go
-0644 internal/review/store_m3_test.go
+0644 internal/review/store_mutation.go
 0644 internal/review/store_test.go
-0644 internal/review/targets.go
 0644 internal/review/testdata/lossless.json
 0644 internal/review/value.go
 0644 internal/server/asset.go
 0644 internal/server/asset_test.go
-0644 internal/server/m3_operation_test.go
 0644 internal/server/m3_route_test.go
 0644 internal/server/server.go
 0644 internal/server/server_test.go
@@ -210,6 +207,8 @@
 0644 web/src/navigation.ts
 0644 web/src/polling.test.ts
 0644 web/src/polling.ts
+0644 web/src/review-order.ts
+0644 web/src/review.test.ts
 0644 web/src/review.tsx
 0644 web/src/styles/tokens.css
 0644 web/src/testdata/contracts/m2/conflict.json
@@ -226,7 +225,6 @@
 0644 web/src/testdata/contracts/m3/reply-request.json
 0644 web/src/testdata/contracts/m3/review.json
 0644 web/src/testdata/contracts/m3/status-request.json
-0644 web/src/testdata/contracts/m3/target-conflict.json
 0644 web/src/theme.test.ts
 0644 web/src/theme.ts
 0644 web/tests/browser/m1-readonly.spec.ts

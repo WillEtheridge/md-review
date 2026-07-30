@@ -18,10 +18,6 @@ const baselineReviewMetadata = "d".repeat(64);
 const changedReviewMetadata = "e".repeat(64);
 const baselineReviewRevision = "3".repeat(64);
 const changedReviewRevision = "4".repeat(64);
-const initialThreadFingerprint = "5".repeat(64);
-const initialMessageFingerprint = "6".repeat(64);
-const changedThreadFingerprint = "7".repeat(64);
-const changedMessageFingerprint = "8".repeat(64);
 
 type Availability = "ready" | "tooLarge";
 
@@ -116,8 +112,6 @@ class MockM5Server {
   reviewRevision = baselineReviewRevision;
   reviewMetadataRevision: string | null = baselineReviewMetadata;
   threads: MockThread[] = [reviewThread()];
-  threadFingerprint = initialThreadFingerprint;
-  messageFingerprint = initialMessageFingerprint;
   stateRequests: StateRequest[] = [];
   documentGets = 0;
   reviewGets = 0;
@@ -211,17 +205,7 @@ class MockM5Server {
           path: "README.md",
           documentRevision: this.reviewDocumentRevision,
           reviewRevision: this.reviewRevision,
-          threads: this.threads,
-          targets: {
-            threads: Object.fromEntries(
-              this.threads.map((thread) => [thread.id, this.threadFingerprint])
-            ),
-            messages: Object.fromEntries(
-              this.threads.flatMap((thread) =>
-                thread.messages.map((message) => [message.id, this.messageFingerprint])
-              )
-            )
-          }
+          threads: this.threads
         });
         return;
       }
@@ -232,15 +216,13 @@ class MockM5Server {
         this.mutationBodies.push(request.postDataJSON());
         await fulfillJSON(route, 409, {
           error: {
-            code: "targetChanged",
-            message: "The review target changed.",
-            requestId: "m5-target-changed"
+            code: "reviewChanged",
+            message: "The review changed.",
+            requestId: "m5-review-changed"
           },
           current: {
             documentRevision: this.reviewDocumentRevision,
-            reviewRevision: this.reviewRevision,
-            targetFingerprint:
-              request.method() === "POST" ? this.threadFingerprint : this.messageFingerprint
+            reviewRevision: this.reviewRevision
           }
         });
         return;
@@ -536,14 +518,12 @@ test("freezes an open new-comment draft until cancellation triggers fresh reconc
 });
 
 for (const editorKind of ["reply", "edit"] as const) {
-  test(`freezes an open ${editorKind} draft and submits its captured fingerprint`, async ({
+  test(`freezes an open ${editorKind} draft and submits its captured revisions`, async ({
     page
   }) => {
     const server = new MockM5Server();
     const baseline = await openWorkspace(page, server);
     const card = page.locator('.thread-card[data-thread-id="thread_m5"]');
-    const expectedFingerprint =
-      editorKind === "reply" ? initialThreadFingerprint : initialMessageFingerprint;
     const draft = `${editorKind} draft survives external changes`;
 
     if (editorKind === "reply") {
@@ -558,8 +538,6 @@ for (const editorKind of ["reply", "edit"] as const) {
       await card.getByRole("textbox", { name: "Edit message" }).fill(draft);
     }
 
-    server.threadFingerprint = changedThreadFingerprint;
-    server.messageFingerprint = changedMessageFingerprint;
     server.reviewMetadataRevision = changedReviewMetadata;
     server.reviewRevision = changedReviewRevision;
     server.advanceWorkspace();
@@ -591,7 +569,8 @@ for (const editorKind of ["reply", "edit"] as const) {
     await expect(page.getByRole("alert").filter({ hasText: "draft has been kept" })).toBeVisible();
     expect(server.mutationBodies).toHaveLength(1);
     expect(server.mutationBodies[0]).toMatchObject({
-      targetFingerprint: expectedFingerprint
+      expectedDocumentRevision: baselineDocumentRevision,
+      expectedReviewRevision: baselineReviewRevision
     });
   });
 }

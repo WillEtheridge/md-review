@@ -603,7 +603,6 @@ func decodeReplyRequest(
 		DocumentPath:             transport.DocumentPath,
 		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
 		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
-		TargetFingerprint:        transport.TargetFingerprint,
 		MessageBody:              transport.Message.Body,
 	}, nil
 }
@@ -620,7 +619,6 @@ func decodeEditMessageRequest(
 		DocumentPath:             transport.DocumentPath,
 		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
 		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
-		TargetFingerprint:        transport.TargetFingerprint,
 		MessageBody:              transport.Message.Body,
 	}, nil
 }
@@ -637,7 +635,6 @@ func decodeChangeStatusRequest(
 		DocumentPath:             transport.DocumentPath,
 		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
 		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
-		TargetFingerprint:        transport.TargetFingerprint,
 		Status:                   transport.Status,
 	}, nil
 }
@@ -646,7 +643,7 @@ func decodeDeleteThreadRequest(
 	response http.ResponseWriter,
 	request *http.Request,
 ) (review.DeleteThreadInput, error) {
-	var transport targetOperationRequest
+	var transport reviewOperationRequest
 	if err := decodeStrictRequest(response, request, &transport); err != nil {
 		return review.DeleteThreadInput{}, err
 	}
@@ -654,7 +651,6 @@ func decodeDeleteThreadRequest(
 		DocumentPath:             transport.DocumentPath,
 		ExpectedDocumentRevision: transport.ExpectedDocumentRevision,
 		ExpectedReviewRevision:   transport.ExpectedReviewRevision,
-		TargetFingerprint:        transport.TargetFingerprint,
 	}, nil
 }
 
@@ -769,25 +765,13 @@ func (server *Server) writeDocumentError(response http.ResponseWriter, requestID
 }
 
 func (server *Server) writeReviewError(response http.ResponseWriter, requestID string, err error) {
-	var targetConflict *review.TargetChangedError
-	if errors.As(err, &targetConflict) {
-		server.writeJSON(response, http.StatusConflict, targetConflictResponse{
-			Error: apiError{
-				Code:      "targetChanged",
-				Message:   "This review target changed on disk. Your change was not submitted.",
-				RequestID: requestID,
-			},
-			Current: targetConflict.Current,
-		})
-		return
-	}
 	var conflict *review.ConflictError
 	if errors.As(err, &conflict) {
 		code := "reviewChanged"
 		message := "The review changed on disk. Your comment was not submitted."
 		if errors.Is(conflict, review.ErrDocumentChanged) {
 			code = "documentChanged"
-			message = "The selected source changed or is no longer unique."
+			message = "The document changed on disk. Your change was not submitted."
 		}
 		server.writeConflict(response, requestID, code, message, conflict.Current)
 		return
@@ -929,40 +913,34 @@ type createThreadRequest struct {
 	} `json:"message"`
 }
 
-type targetOperationRequest struct {
+type reviewOperationRequest struct {
 	DocumentPath             string `json:"documentPath"`
 	ExpectedDocumentRevision string `json:"expectedDocumentRevision"`
 	ExpectedReviewRevision   string `json:"expectedReviewRevision"`
-	TargetFingerprint        string `json:"targetFingerprint"`
 }
 
 type replyOperationRequest struct {
-	targetOperationRequest
+	reviewOperationRequest
 	Message struct {
 		Body string `json:"body"`
 	} `json:"message"`
 }
 
 type editMessageOperationRequest struct {
-	targetOperationRequest
+	reviewOperationRequest
 	Message struct {
 		Body string `json:"body"`
 	} `json:"message"`
 }
 
 type statusOperationRequest struct {
-	targetOperationRequest
+	reviewOperationRequest
 	Status review.ThreadStatus `json:"status"`
 }
 
 type conflictResponse struct {
 	Error   apiError                `json:"error"`
 	Current review.CurrentRevisions `json:"current"`
-}
-
-type targetConflictResponse struct {
-	Error   apiError                  `json:"error"`
-	Current review.CurrentTargetState `json:"current"`
 }
 
 func navigationResponse(entries []workspace.NavigationEntry) []navigationEntry {

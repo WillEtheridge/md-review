@@ -108,23 +108,6 @@ function reviewThreads(): unknown[] {
   });
 }
 
-function targetFingerprints(): {
-  threads: Record<string, string>;
-  messages: Record<string, string>;
-} {
-  const threads: Record<string, string> = {};
-  const messages: Record<string, string> = {};
-  for (let index = 0; index < 14; index += 1) {
-    const sequence = String(index + 1).padStart(2, "0");
-    threads[`thread_layout_${sequence}`] = String((index % 9) + 1).repeat(64);
-    messages[`message_layout_${sequence}`] = String(((index + 1) % 9) + 1).repeat(64);
-  }
-  return {
-    threads,
-    messages
-  };
-}
-
 async function fulfillJSON(route: Route, status: number, body: unknown): Promise<void> {
   await route.fulfill({
     status,
@@ -184,8 +167,7 @@ async function mockLayoutWorkspace(page: Page): Promise<void> {
         path: "README.md",
         documentRevision: revision,
         reviewRevision: "8".repeat(64),
-        threads,
-        targets: targetFingerprints()
+        threads
       });
       return;
     }

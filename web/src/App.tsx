@@ -131,8 +131,7 @@ function readyReview(response: ReviewResponse): ReviewLoad {
   return {
     status: "ready",
     revision: response.reviewRevision,
-    threads: response.threads,
-    ...(response.targets ? { targets: response.targets } : {})
+    threads: response.threads
   };
 }
 
@@ -190,11 +189,8 @@ async function loadDocumentAndReview(
 
 function createFailureMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
-    if (error.code === "documentChanged") {
-      return "The selected source changed or is no longer unique.";
-    }
-    if (error.code === "reviewChanged") {
-      return "The review sidecar kept changing while the comment was saved.";
+    if (error.code === "documentChanged" || error.code === "reviewChanged") {
+      return "The document or review changed on disk. Reload before trying again.";
     }
     if (error.code === "reviewTooLarge") {
       return "The review sidecar would exceed its 8 MiB limit.";
@@ -220,11 +216,8 @@ function createFailureMessage(error: unknown): string {
 
 function operationFailureMessage(error: unknown): string {
   if (error instanceof ApiRequestError) {
-    if (error.code === "targetChanged") {
-      return "This review item changed on disk. Reload the document before trying again.";
-    }
-    if (error.code === "reviewChanged") {
-      return "The review sidecar kept changing while this review change was saved.";
+    if (error.code === "documentChanged" || error.code === "reviewChanged") {
+      return "The document or review changed on disk. Reload before trying again.";
     }
     if (error.code === "reviewInvalid") {
       return "The review sidecar became invalid.";
@@ -1193,17 +1186,13 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
             review: {
               status: "ready",
               revision: response.reviewRevision,
-              threads: [...current.review.threads, response.thread],
-              ...(current.review.targets ? { targets: current.review.targets } : {})
+              threads: [...current.review.threads, response.thread]
             }
           };
         });
         updateComposer(null);
         setActiveThreadId(response.thread.id);
         window.getSelection()?.removeAllRanges();
-        // The creation response has no target fingerprint. Reconcile the
-        // sidecar before enabling lifecycle controls for this thread.
-        pollCoordinatorRef.current?.requestNow();
       })
       .catch((error: unknown) => {
         if (isAbortError(error)) {
@@ -1231,19 +1220,13 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       throw new Error("The review is not ready. Select the document again.");
     }
 
-    const fingerprint = operation.targetFingerprint;
-    if (!fingerprint) {
-      pollCoordinatorRef.current?.requestNow();
-      throw new Error("Reload the document to use its current review controls.");
-    }
-
     const submittedPath = document.path;
-    const submittedDocumentRevision = document.revision;
+    const submittedDocumentRevision = operation.expectedDocumentRevision;
+    const submittedReviewRevision = operation.expectedReviewRevision;
     const commonRequest = {
       documentPath: document.path,
-      expectedDocumentRevision: document.revision,
-      expectedReviewRevision: document.review.revision,
-      targetFingerprint: fingerprint
+      expectedDocumentRevision: submittedDocumentRevision,
+      expectedReviewRevision: submittedReviewRevision
     };
 
     mutationControllerRef.current?.abort();
@@ -1262,37 +1245,18 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
             current.status !== "ready" ||
             current.path !== submittedPath ||
             current.review.status !== "ready" ||
+            current.revision !== submittedDocumentRevision ||
+            current.review.revision !== submittedReviewRevision ||
             response.documentRevision !== submittedDocumentRevision
           ) {
             return current;
           }
-          const removedThread = current.review.threads.find(
-            (thread) => thread.id === operation.threadId
-          );
-          const removedMessageIDs = new Set(
-            (removedThread?.messages ?? []).map((message) => message.id)
-          );
-          const nextTargets = current.review.targets
-            ? {
-                threads: Object.fromEntries(
-                  Object.entries(current.review.targets.threads).filter(
-                    ([threadID]) => threadID !== operation.threadId
-                  )
-                ),
-                messages: Object.fromEntries(
-                  Object.entries(current.review.targets.messages).filter(
-                    ([messageID]) => !removedMessageIDs.has(messageID)
-                  )
-                )
-              }
-            : undefined;
           return {
             ...current,
             review: {
               status: "ready",
               revision: response.reviewRevision,
-              threads: current.review.threads.filter((thread) => thread.id !== operation.threadId),
-              ...(nextTargets ? { targets: nextTargets } : {})
+              threads: current.review.threads.filter((thread) => thread.id !== operation.threadId)
             }
           };
         });
@@ -1343,6 +1307,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           current.status !== "ready" ||
           current.path !== submittedPath ||
           current.review.status !== "ready" ||
+          current.revision !== submittedDocumentRevision ||
+          current.review.revision !== submittedReviewRevision ||
           response.documentRevision !== submittedDocumentRevision
         ) {
           return current;
@@ -1355,23 +1321,12 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
         }
         const nextThreads = [...current.review.threads];
         nextThreads[threadIndex] = response.thread;
-        const nextTargets = {
-          threads: {
-            ...(current.review.targets?.threads ?? {}),
-            ...response.targets.threads
-          },
-          messages: {
-            ...(current.review.targets?.messages ?? {}),
-            ...response.targets.messages
-          }
-        };
         return {
           ...current,
           review: {
             status: "ready",
             revision: response.reviewRevision,
-            threads: nextThreads,
-            targets: nextTargets
+            threads: nextThreads
           }
         };
       });
@@ -1383,7 +1338,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       if (isAbortError(error)) {
         throw error;
       }
-      if (error instanceof ApiRequestError && error.code === "targetChanged") {
+      if (
+        error instanceof ApiRequestError &&
+        (error.code === "documentChanged" || error.code === "reviewChanged")
+      ) {
         pollCoordinatorRef.current?.requestNow();
       }
       throw new Error(operationFailureMessage(error), { cause: error });
@@ -1543,6 +1501,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       <aside class="panel review-panel" aria-labelledby="review-heading">
         <ReviewPanel
           documentPath={"path" in document ? document.path : null}
+          documentRevision={document.status === "ready" ? document.revision : null}
           review={document.status === "ready" ? document.review : null}
           composer={composer}
           activeThreadId={activeThreadId}

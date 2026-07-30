@@ -171,11 +171,11 @@ func TestStoreCreatesTextAndDocumentThreads(t *testing.T) {
 		t.Fatalf("new sidecar permissions = %o, want 640", info.Mode().Perm())
 	}
 
-	staleReviewRevision := (*string)(nil)
+	currentReviewRevision := textResult.ReviewRevision
 	documentResult, err := store.CreateThread(context.Background(), CreateThreadInput{
 		DocumentPath:             "README.md",
 		ExpectedDocumentRevision: textResult.DocumentRevision,
-		ExpectedReviewRevision:   staleReviewRevision,
+		ExpectedReviewRevision:   &currentReviewRevision,
 		Anchor:                   Anchor{Type: AnchorDocument},
 		MessageBody:              "Add an introduction.",
 	})
@@ -195,81 +195,67 @@ func TestStoreCreatesTextAndDocumentThreads(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(document.Threads()) != 2 {
-		t.Fatalf("merged thread count = %d, want 2", len(document.Threads()))
+		t.Fatalf("thread count = %d, want 2", len(document.Threads()))
 	}
 	if documentResult.ReviewRevision != Revision(data) {
 		t.Fatalf("result review revision does not match exact sidecar bytes")
 	}
 }
 
-func TestStoreRebasesOnlyOneExactOccurrenceAfterDocumentChange(t *testing.T) {
-	original := []byte("old target")
-	tests := []struct {
-		name       string
-		current    string
-		wantStart  uint64
-		wantEnd    uint64
-		wantErr    error
-		documentAt bool
-	}{
-		{"unique move", "moved target here", 6, 12, nil, false},
-		{"missing", "moved elsewhere", 0, 0, ErrDocumentChanged, false},
-		{"ambiguous", "target and target", 0, 0, ErrDocumentChanged, false},
-		{"overlapping ambiguous", "ttt", 0, 0, ErrDocumentChanged, false},
-		{"document anchor tolerates change", "rewritten", 0, 0, nil, true},
+func TestStoreRejectsAllStaleDocumentRevisions(t *testing.T) {
+	root := t.TempDir()
+	current := []byte("moved target here")
+	writeFile(t, root, "README.md", current, 0o644)
+	store := deterministicStore(t, openFilesystem(t, root))
+	_, err := store.CreateThread(context.Background(), CreateThreadInput{
+		DocumentPath: "README.md", ExpectedDocumentRevision: Revision([]byte("old target")),
+		Anchor: Anchor{Type: AnchorDocument}, MessageBody: "Review this.",
+	})
+	if !errors.Is(err, ErrDocumentChanged) {
+		t.Fatalf("CreateThread error = %v", err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			expectedOriginal := original
-			root := t.TempDir()
-			writeFile(t, root, "README.md", []byte(test.current), 0o644)
-			store := deterministicStore(t, openFilesystem(t, root))
-			anchor := Anchor{
-				Type:   AnchorText,
-				Range:  &ByteRange{Start: 4, End: 10},
-				Source: "target",
-				Text:   "target",
-			}
-			if test.name == "overlapping ambiguous" {
-				expectedOriginal = []byte("old tt")
-				anchor.Range = &ByteRange{Start: 4, End: 6}
-				anchor.Source = "tt"
-				anchor.Text = "tt"
-			}
-			if test.documentAt {
-				anchor = Anchor{Type: AnchorDocument}
-			}
-			result, err := store.CreateThread(context.Background(), CreateThreadInput{
-				DocumentPath:             "README.md",
-				ExpectedDocumentRevision: Revision(expectedOriginal),
-				Anchor:                   anchor,
-				MessageBody:              "Review this.",
-			})
-			if test.wantErr != nil {
-				if !errors.Is(err, test.wantErr) {
-					t.Fatalf("CreateThread error = %v, want %v", err, test.wantErr)
-				}
-				var conflict *ConflictError
-				if !errors.As(err, &conflict) ||
-					conflict.Current.DocumentRevision != Revision([]byte(test.current)) {
-					t.Fatalf("conflict = %+v", conflict)
-				}
-				if _, statErr := os.Stat(filepath.Join(root, "README.md.review.json")); !errors.Is(statErr, os.ErrNotExist) {
-					t.Fatalf("conflicted creation wrote a sidecar: %v", statErr)
-				}
-				return
-			}
-			if test.documentAt {
-				if result.Thread.Attachment.State != AttachmentDocument {
-					t.Fatalf("document attachment = %+v", result.Thread.Attachment)
-				}
-				return
-			}
-			if result.Thread.Anchor.Range.Start != test.wantStart ||
-				result.Thread.Anchor.Range.End != test.wantEnd ||
-				result.Thread.Attachment.CurrentRange.Start != test.wantStart ||
-				result.Thread.Attachment.CurrentRange.End != test.wantEnd {
-				t.Fatalf("rebased result = %+v", result.Thread)
+	var conflict *ConflictError
+	if !errors.As(err, &conflict) || conflict.Current.DocumentRevision != Revision(current) {
+		t.Fatalf("conflict = %+v", conflict)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "README.md.review.json")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("conflicted creation wrote a sidecar: %v", statErr)
+	}
+}
+
+func TestStoreWorkflowMutationsRequireWholeRevisions(t *testing.T) {
+	root := t.TempDir()
+	markdown := []byte("# title\n")
+	sidecar := []byte(validSidecar(`{"id":"thread_existing","anchor":{"type":"document"},"status":"open","messages":[` + validMessage("message_existing") + `]}`))
+	writeFile(t, root, "README.md", markdown, 0o644)
+	writeFile(t, root, "README.md.review.json", sidecar, 0o640)
+	store := deterministicStore(t, openFilesystem(t, root))
+	documentRevision, reviewRevision := Revision(markdown), Revision(sidecar)
+	if _, err := store.Reply(context.Background(), ReplyInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing", MessageBody: "Reply."}); err != nil {
+		t.Fatalf("Reply() = %v", err)
+	}
+
+	for name, mutate := range map[string]func() error{
+		"reply": func() error {
+			_, err := store.Reply(context.Background(), ReplyInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing", MessageBody: "Reply again."})
+			return err
+		},
+		"edit": func() error {
+			_, err := store.EditMessage(context.Background(), EditMessageInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, MessageID: "message_existing", MessageBody: "Edited."})
+			return err
+		},
+		"status": func() error {
+			_, err := store.ChangeStatus(context.Background(), ChangeStatusInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing", Status: StatusResolved})
+			return err
+		},
+		"delete": func() error {
+			_, err := store.DeleteThread(context.Background(), DeleteThreadInput{DocumentPath: "README.md", ExpectedDocumentRevision: documentRevision, ExpectedReviewRevision: reviewRevision, ThreadID: "thread_existing"})
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := mutate(); !errors.Is(err, ErrReviewChanged) {
+				t.Fatalf("mutation error = %v, want ErrReviewChanged", err)
 			}
 		})
 	}
@@ -348,7 +334,7 @@ func TestStoreRejectsSameRevisionAnchorMismatch(t *testing.T) {
 	}
 }
 
-func TestStoreConcurrentSameSidecarCreationsMerge(t *testing.T) {
+func TestStoreConcurrentSameSidecarCreationsConflict(t *testing.T) {
 	root := t.TempDir()
 	markdown := []byte("# title\n")
 	writeFile(t, root, "README.md", markdown, 0o644)
@@ -375,10 +361,16 @@ func TestStoreConcurrentSameSidecarCreationsMerge(t *testing.T) {
 	close(start)
 	wait.Wait()
 	close(results)
+	successes := 0
 	for err := range results {
-		if err != nil {
+		if err == nil {
+			successes++
+		} else if !errors.Is(err, ErrReviewChanged) {
 			t.Fatal(err)
 		}
+	}
+	if successes != 1 {
+		t.Fatalf("successful creations = %d, want 1", successes)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "README.md.review.json"))
 	if err != nil {
@@ -388,12 +380,12 @@ func TestStoreConcurrentSameSidecarCreationsMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(document.Threads()) != workers {
-		t.Fatalf("thread count = %d, want %d", len(document.Threads()), workers)
+	if len(document.Threads()) != 1 {
+		t.Fatalf("thread count = %d, want 1", len(document.Threads()))
 	}
 }
 
-func TestStoreDoesNotSerializeDifferentSidecars(t *testing.T) {
+func TestStoreSerializesAllMutations(t *testing.T) {
 	entered := make(chan string, 2)
 	release := make(chan struct{})
 	fake := &fakeGateway{
@@ -430,12 +422,15 @@ func TestStoreDoesNotSerializeDifferentSidecars(t *testing.T) {
 			results <- err
 		}(documentPath)
 	}
-	for count := 0; count < 2; count++ {
-		select {
-		case <-entered:
-		case <-time.After(2 * time.Second):
-			t.Fatal("different-sidecar mutations were globally serialized")
-		}
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first mutation did not enter")
+	}
+	select {
+	case <-entered:
+		t.Fatal("mutations were not globally serialized")
+	case <-time.After(50 * time.Millisecond):
 	}
 	close(release)
 	for count := 0; count < 2; count++ {
@@ -514,7 +509,7 @@ func TestStorePreservesExternalUnknownValuesDuringCreation(t *testing.T) {
 	if _, err := store.CreateThread(context.Background(), CreateThreadInput{
 		DocumentPath:             "README.md",
 		ExpectedDocumentRevision: Revision(markdown),
-		ExpectedReviewRevision:   nil,
+		ExpectedReviewRevision:   ptr(Revision(fixture)),
 		Anchor:                   Anchor{Type: AnchorDocument},
 		MessageBody:              "New feedback.",
 	}); err != nil {
@@ -632,10 +627,12 @@ func TestStoreRejectsUnsafeAndInvalidExistingSidecarsWithoutOverwrite(t *testing
 			test.prepare(t, root)
 			target := filepath.Join(root, "README.md.review.json")
 			before, _ := os.ReadFile(target)
+			reviewRevision := Revision(before)
 			store := deterministicStore(t, openFilesystem(t, root))
 			_, err := store.CreateThread(context.Background(), CreateThreadInput{
 				DocumentPath:             "README.md",
 				ExpectedDocumentRevision: Revision(markdown),
+				ExpectedReviewRevision:   &reviewRevision,
 				Anchor:                   Anchor{Type: AnchorDocument},
 				MessageBody:              "Comment.",
 			})
@@ -661,10 +658,12 @@ func TestStoreRejectsOversizedResultWithoutChangingSidecar(t *testing.T) {
 	}
 	writeFile(t, root, "README.md.review.json", sidecar, 0o640)
 	store := deterministicStore(t, openFilesystem(t, root))
+	reviewRevision := Revision(sidecar)
 
 	_, err := store.CreateThread(context.Background(), CreateThreadInput{
 		DocumentPath:             "README.md",
 		ExpectedDocumentRevision: Revision(markdown),
+		ExpectedReviewRevision:   &reviewRevision,
 		Anchor:                   Anchor{Type: AnchorDocument},
 		MessageBody:              "This pushes the result over the limit.",
 	})
@@ -777,6 +776,8 @@ func deterministicStoreOptions() StoreOptions {
 		},
 	}
 }
+
+func ptr(value string) *string { return &value }
 
 func openFilesystem(t *testing.T, root string) *filesystem.FS {
 	t.Helper()

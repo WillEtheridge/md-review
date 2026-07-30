@@ -3,7 +3,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import type {
   CurrentRevisions,
   ReviewThread,
-  TargetFingerprints,
   TextReviewThread,
   TextThreadAnchor,
   ThreadStatus
@@ -23,7 +22,6 @@ export type ReviewLoad =
       status: "ready";
       revision: string | null;
       threads: ReviewThread[];
-      targets?: TargetFingerprints;
     }
   | {
       status: "error";
@@ -391,33 +389,38 @@ export type ReviewOperation =
   | {
       kind: "reply";
       threadId: string;
-      targetFingerprint: string;
+      expectedDocumentRevision: string;
+      expectedReviewRevision: string;
       body: string;
     }
   | {
       kind: "edit";
       threadId: string;
       messageId: string;
-      targetFingerprint: string;
+      expectedDocumentRevision: string;
+      expectedReviewRevision: string;
       body: string;
     }
   | {
       kind: "status";
       threadId: string;
-      targetFingerprint: string;
+      expectedDocumentRevision: string;
+      expectedReviewRevision: string;
       status: "open" | "resolved";
     }
   | {
       kind: "delete";
       threadId: string;
-      targetFingerprint: string;
+      expectedDocumentRevision: string;
+      expectedReviewRevision: string;
     };
 
 interface OperationEditor {
   kind: "reply" | "edit";
   threadId: string;
   messageId?: string;
-  targetFingerprint: string;
+  expectedDocumentRevision: string;
+  expectedReviewRevision: string;
   draft: string;
   submitting: boolean;
   error: string | null;
@@ -596,7 +599,6 @@ function ThreadCard({
   thread,
   active,
   interactive,
-  targets,
   editor,
   editorDisabledReason,
   pending,
@@ -617,7 +619,6 @@ function ThreadCard({
   thread: ReviewThread;
   active: boolean;
   interactive: boolean;
-  targets: TargetFingerprints | undefined;
   editor: OperationEditor | null;
   editorDisabledReason: string | null;
   pending: boolean;
@@ -647,16 +648,11 @@ function ThreadCard({
       : thread.anchor.type === "text"
         ? "Text"
         : "Document";
-  const hasThreadFingerprint = targets?.threads[thread.id] !== undefined;
-  const canOperate = interactive && hasThreadFingerprint && !pending && editor === null;
+  const canOperate = interactive && !pending && editor === null;
   const canDelete = canOperate && thread.messages.length === 1;
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const editableMessages = thread.messages.flatMap((message, index) =>
-    interactive &&
-    editor === null &&
-    !pending &&
-    message.author.type === "human" &&
-    targets?.messages[message.id] !== undefined
+    interactive && editor === null && !pending && message.author.type === "human"
       ? [{ message, index }]
       : []
   );
@@ -932,6 +928,7 @@ function Composer({
 
 export function ReviewPanel({
   documentPath,
+  documentRevision,
   review,
   composer,
   activeThreadId,
@@ -945,6 +942,7 @@ export function ReviewPanel({
   onEditorActiveChange
 }: {
   documentPath: string | null;
+  documentRevision: string | null;
   review: ReviewLoad | null;
   composer: ReviewComposer | null;
   activeThreadId: string | null;
@@ -1031,8 +1029,7 @@ export function ReviewPanel({
   };
 
   const handleStartReply = (threadId: string, trigger: HTMLButtonElement): void => {
-    const targetFingerprint = readyReview?.targets?.threads[threadId];
-    if (!targetFingerprint) {
+    if (!documentRevision || !readyReview?.revision) {
       return;
     }
     originRef.current = trigger;
@@ -1040,7 +1037,8 @@ export function ReviewPanel({
     setEditor({
       kind: "reply",
       threadId,
-      targetFingerprint,
+      expectedDocumentRevision: documentRevision,
+      expectedReviewRevision: readyReview.revision,
       draft: "",
       submitting: false,
       error: null
@@ -1054,8 +1052,7 @@ export function ReviewPanel({
     body: string,
     trigger: HTMLButtonElement
   ): void => {
-    const targetFingerprint = readyReview?.targets?.messages[messageId];
-    if (!targetFingerprint) {
+    if (!documentRevision || !readyReview?.revision) {
       return;
     }
     originRef.current = trigger;
@@ -1064,7 +1061,8 @@ export function ReviewPanel({
       kind: "edit",
       threadId,
       messageId,
-      targetFingerprint,
+      expectedDocumentRevision: documentRevision,
+      expectedReviewRevision: readyReview.revision,
       draft: body,
       submitting: false,
       error: null
@@ -1082,14 +1080,16 @@ export function ReviewPanel({
         ? {
             kind: "reply",
             threadId: editor.threadId,
-            targetFingerprint: editor.targetFingerprint,
+            expectedDocumentRevision: editor.expectedDocumentRevision,
+            expectedReviewRevision: editor.expectedReviewRevision,
             body: editor.draft
           }
         : {
             kind: "edit",
             threadId: editor.threadId,
             messageId: editor.messageId ?? "",
-            targetFingerprint: editor.targetFingerprint,
+            expectedDocumentRevision: editor.expectedDocumentRevision,
+            expectedReviewRevision: editor.expectedReviewRevision,
             body: editor.draft
           };
     setEditor({ ...editor, submitting: true, error: null });
@@ -1223,8 +1223,7 @@ export function ReviewPanel({
               key={thread.id}
               thread={thread}
               active={thread.id === activeThreadId}
-              interactive={!composer}
-              targets={readyReview?.targets}
+              interactive={!composer && readyReview?.revision !== null}
               editor={editor?.threadId === thread.id ? editor : null}
               editorDisabledReason={editorDisabledReason}
               pending={pendingThreadId === thread.id}
@@ -1246,10 +1245,15 @@ export function ReviewPanel({
                 handleStartEdit(thread.id, messageId, body, trigger);
               }}
               onStatus={(status, trigger) => {
-                const targetFingerprint = readyReview?.targets?.threads[thread.id];
-                if (targetFingerprint) {
+                if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
-                    { kind: "status", threadId: thread.id, targetFingerprint, status },
+                    {
+                      kind: "status",
+                      threadId: thread.id,
+                      expectedDocumentRevision: documentRevision,
+                      expectedReviewRevision: readyReview.revision,
+                      status
+                    },
                     trigger
                   );
                 }
@@ -1260,10 +1264,14 @@ export function ReviewPanel({
               }}
               onConfirmDelete={(trigger) => {
                 setDeleteConfirmationThreadId(null);
-                const targetFingerprint = readyReview?.targets?.threads[thread.id];
-                if (targetFingerprint) {
+                if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
-                    { kind: "delete", threadId: thread.id, targetFingerprint },
+                    {
+                      kind: "delete",
+                      threadId: thread.id,
+                      expectedDocumentRevision: documentRevision,
+                      expectedReviewRevision: readyReview.revision
+                    },
                     trigger
                   );
                 }
@@ -1293,8 +1301,7 @@ export function ReviewPanel({
               key={thread.id}
               thread={thread}
               active={thread.id === activeThreadId}
-              interactive={!composer}
-              targets={readyReview?.targets}
+              interactive={!composer && readyReview?.revision !== null}
               editor={editor?.threadId === thread.id ? editor : null}
               editorDisabledReason={editorDisabledReason}
               pending={pendingThreadId === thread.id}
@@ -1316,10 +1323,15 @@ export function ReviewPanel({
                 handleStartEdit(thread.id, messageId, body, trigger);
               }}
               onStatus={(status, trigger) => {
-                const targetFingerprint = readyReview?.targets?.threads[thread.id];
-                if (targetFingerprint) {
+                if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
-                    { kind: "status", threadId: thread.id, targetFingerprint, status },
+                    {
+                      kind: "status",
+                      threadId: thread.id,
+                      expectedDocumentRevision: documentRevision,
+                      expectedReviewRevision: readyReview.revision,
+                      status
+                    },
                     trigger
                   );
                 }
@@ -1330,10 +1342,14 @@ export function ReviewPanel({
               }}
               onConfirmDelete={(trigger) => {
                 setDeleteConfirmationThreadId(null);
-                const targetFingerprint = readyReview?.targets?.threads[thread.id];
-                if (targetFingerprint) {
+                if (documentRevision && readyReview?.revision) {
                   handleImmediateOperation(
-                    { kind: "delete", threadId: thread.id, targetFingerprint },
+                    {
+                      kind: "delete",
+                      threadId: thread.id,
+                      expectedDocumentRevision: documentRevision,
+                      expectedReviewRevision: readyReview.revision
+                    },
                     trigger
                   );
                 }

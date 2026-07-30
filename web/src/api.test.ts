@@ -12,7 +12,6 @@ import mutationResponseContract from "./testdata/contracts/m3/mutation-response.
 import replyRequestContract from "./testdata/contracts/m3/reply-request.json";
 import m3ReviewContract from "./testdata/contracts/m3/review.json";
 import statusRequestContract from "./testdata/contracts/m3/status-request.json";
-import targetConflictContract from "./testdata/contracts/m3/target-conflict.json";
 import {
   ApiClient,
   ApiProtocolError,
@@ -549,30 +548,23 @@ describe("Milestone 2 review API decoding", () => {
 });
 
 describe("Milestone 3 review operation transport", () => {
-  it("decodes fingerprints and the shared mutation responses", () => {
+  it("decodes whole-revision review and mutation responses", () => {
     expect(decodeReview(m3ReviewContract)).toEqual(m3ReviewContract);
     expect(decodeMutationResponse(mutationResponseContract)).toEqual(mutationResponseContract);
     expect(decodeDeleteThreadResponse(deleteResponseContract)).toEqual(deleteResponseContract);
   });
 
-  it("rejects incomplete or malformed target maps", () => {
+  it("rejects malformed whole-file revisions", () => {
     expect(() =>
       decodeReview({
         ...m3ReviewContract,
-        targets: {
-          threads: m3ReviewContract.targets.threads
-        }
+        reviewRevision: "not-a-revision"
       })
     ).toThrow(ApiProtocolError);
     expect(() =>
       decodeMutationResponse({
         ...mutationResponseContract,
-        targets: {
-          ...mutationResponseContract.targets,
-          messages: {
-            message_reply: "not-a-fingerprint"
-          }
-        }
+        documentRevision: "not-a-revision"
       })
     ).toThrow(ApiProtocolError);
   });
@@ -635,10 +627,10 @@ describe("Milestone 3 review operation transport", () => {
     ]);
   });
 
-  it("preserves a target-changed conflict fingerprint", async () => {
+  it("preserves whole-file revisions from a conflict", async () => {
     const client = new ApiClient(() =>
       Promise.resolve(
-        new Response(JSON.stringify(targetConflictContract), {
+        new Response(JSON.stringify(conflictContract), {
           status: 409
         })
       )
@@ -647,11 +639,10 @@ describe("Milestone 3 review operation transport", () => {
     await expect(
       client.reply("thread_existing", replyRequestContract as ReplyRequest)
     ).rejects.toMatchObject({
-      code: "targetChanged",
+      code: "documentChanged",
       current: {
-        documentRevision: revision,
-        reviewRevision: "f".repeat(64),
-        targetFingerprint: null
+        documentRevision: "e".repeat(64),
+        reviewRevision: null
       }
     });
   });

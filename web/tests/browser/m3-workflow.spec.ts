@@ -105,19 +105,6 @@ function textThread(
   };
 }
 
-function fingerprints(server: MockServer): {
-  threads: Record<string, string>;
-  messages: Record<string, string>;
-} {
-  const digit = ((server.mutationNumber % 14) + 1).toString(16);
-  return {
-    threads: Object.fromEntries(server.threads.map((thread) => [thread.id, digit.repeat(64)])),
-    messages: Object.fromEntries(
-      server.threads.flatMap((thread) => thread.messages.map((item) => [item.id, digit.repeat(64)]))
-    )
-  };
-}
-
 function decodeOpaqueID(segment: string): string {
   if (!segment.startsWith("~")) {
     throw new Error(`Invalid opaque segment: ${segment}`);
@@ -185,8 +172,7 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
         path: "README.md",
         documentRevision,
         reviewRevision: "a".repeat(64),
-        threads: server.threads,
-        targets: fingerprints(server)
+        threads: server.threads
       });
       return;
     }
@@ -196,14 +182,13 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
       server.failNextMutation = false;
       await fulfillJson(route, 409, {
         error: {
-          code: "targetChanged",
-          message: "This review target changed on disk. Your change was not submitted.",
-          requestId: "request-target-change"
+          code: "reviewChanged",
+          message: "The review changed on disk. Your change was not submitted.",
+          requestId: "request-review-change"
         },
         current: {
           documentRevision,
-          reviewRevision: "a".repeat(64),
-          targetFingerprint: "b".repeat(64)
+          reviewRevision: "b".repeat(64)
         }
       });
       return;
@@ -282,8 +267,7 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
       documentRevision,
       reviewRevision: "e".repeat(64),
       durability: "durable",
-      thread: affectedThread,
-      targets: fingerprints(server)
+      thread: affectedThread
     });
   });
 }
@@ -426,7 +410,7 @@ test("filters and navigates active highlights while rendering reduced safe messa
   await expect(page.getByText("Resolved note")).toBeVisible();
 });
 
-test("keeps reply and edit drafts after target conflicts and permits a keyboard retry", async ({
+test("keeps reply and edit drafts after revision conflicts and permits a keyboard retry", async ({
   page
 }) => {
   const server: MockServer = {
