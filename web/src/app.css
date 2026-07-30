@@ -774,18 +774,6 @@ textarea:focus-visible,
   background: color-mix(in srgb, var(--color-error-soft) 45%, var(--paper));
 }
 
-.durability-notice {
-  margin: 1rem 1rem 0;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-color: color-mix(in srgb, var(--color-uncertain) 55%, var(--border));
-  border-inline-start: 0.25rem solid var(--color-uncertain);
-  color: var(--muted);
-  background: var(--paper);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-}
-
 .review-controls {
   margin: 1rem;
   padding: 0.75rem;
@@ -1386,7 +1374,6 @@ textarea:focus-visible,
   .review-composer,
   .review-controls,
   .thread-card,
-  .durability-notice,
   .document-message,
   .markdown-overflow,
   .markdown-code-overflow,

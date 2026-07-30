@@ -20,19 +20,15 @@ import (
 	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/review"
-	mdruntime "mdreview.dev/mdreview/internal/runtime"
 	"mdreview.dev/mdreview/internal/server"
 	"mdreview.dev/mdreview/internal/skillassets"
 	"mdreview.dev/mdreview/internal/workspace"
 	"mdreview.dev/mdreview/web"
-
-	"golang.org/x/sys/unix"
 )
 
 const (
-	applicationVersion = "v0.1.0"
+	applicationVersion = "v0.2.0-preview.1"
 	defaultPort        = 4242
-	readinessTimeout   = 2 * time.Second
 	shutdownTimeout    = 5 * time.Second
 )
 
@@ -83,12 +79,6 @@ func run(
 	if err != nil {
 		return err
 	}
-	expectedParent := 0
-	if options.Command == cli.Serve && options.ManagedSession {
-		// The snapshot precedes every potentially blocking startup operation.
-		// ArmParentDeath later detects reparenting only from this point onward.
-		expectedParent = unix.Getppid()
-	}
 	if options.Command == cli.Version {
 		_, err := fmt.Fprintln(output, applicationVersion)
 		return err
@@ -96,49 +86,17 @@ func run(
 	if options.Command != cli.Serve {
 		return runSkillManagement(ctx, options, input, output)
 	}
-	return runServe(ctx, options, output, expectedParent)
+	return runServe(ctx, options, output)
 }
 
 func runServe(
 	ctx context.Context,
 	options cli.Options,
 	output io.Writer,
-	expectedParent int,
 ) (returnErr error) {
 	canonicalRoot, err := canonicalDirectory(options.Directory)
 	if err != nil {
 		return err
-	}
-
-	verifyReady := server.HealthVerifier(nil)
-	lease, existing, err := mdruntime.Acquire(ctx, mdruntime.Config{
-		Root:        canonicalRoot,
-		VerifyReady: verifyReady,
-	})
-	if err != nil {
-		return fmt.Errorf("claim workspace instance: %w", err)
-	}
-	if existing != nil {
-		printExistingInstance(output, canonicalRoot, existing.URL)
-		return nil
-	}
-	defer lease.Close()
-
-	if options.ManagedSession {
-		if err := mdruntime.ValidateSession(int(os.Stdin.Fd())); err != nil {
-			return fmt.Errorf("validate managed session: %w", err)
-		}
-		if err := mdruntime.ArmParentDeath(expectedParent, unix.SIGTERM); err != nil {
-			return fmt.Errorf("arm managed session: %w", err)
-		}
-		defer func() {
-			if err := mdruntime.DisarmParentDeath(); err != nil {
-				returnErr = errors.Join(
-					returnErr,
-					fmt.Errorf("disarm managed session: %w", err),
-				)
-			}
-		}()
 	}
 
 	listener, err := listenLoopback(options.Port, options.PortExplicit)
@@ -152,15 +110,14 @@ func runServe(
 		measurements = &gatee.Counters{}
 	}
 	indexedWorkspace, err := workspace.Open(canonicalRoot, workspace.Options{
-		FilesystemMode: filesystem.Auto,
-		Measurements:   measurements,
+		Measurements: measurements,
 	})
 	if err != nil {
 		return fmt.Errorf("open workspace: %w", err)
 	}
 	defer indexedWorkspace.Close()
 
-	reviewFilesystem, err := filesystem.Open(canonicalRoot, filesystem.Auto)
+	reviewFilesystem, err := filesystem.Open(canonicalRoot)
 	if err != nil {
 		return fmt.Errorf("open review filesystem: %w", err)
 	}
@@ -178,12 +135,11 @@ func runServe(
 	}
 	boundHost := listener.Addr().String()
 	handler, err := server.New(server.Config{
-		Assets:        application.web,
-		Workspace:     indexedWorkspace,
-		Review:        reviewStore,
-		InstanceNonce: lease.InstanceNonce(),
-		BoundHost:     boundHost,
-		Measurements:  measurements,
+		Assets:       application.web,
+		Workspace:    indexedWorkspace,
+		Review:       reviewStore,
+		BoundHost:    boundHost,
+		Measurements: measurements,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP server: %w", err)
@@ -201,25 +157,6 @@ func runServe(
 		serveErrors <- httpServer.Serve(listener)
 	}()
 	defer httpServer.Close()
-
-	readyContext, cancelReady := context.WithTimeout(ctx, readinessTimeout)
-	err = waitUntilReady(
-		readyContext,
-		verifyReady,
-		mdruntime.ReadyState{
-			Root:          canonicalRoot,
-			InstanceNonce: lease.InstanceNonce(),
-			URL:           instanceURL,
-		},
-		serveErrors,
-	)
-	cancelReady()
-	if err != nil {
-		return err
-	}
-	if err := lease.PublishReady(instanceURL); err != nil {
-		return fmt.Errorf("publish ready instance: %w", err)
-	}
 
 	snapshot, err := indexedWorkspace.Snapshot(ctx)
 	if err != nil {
@@ -311,29 +248,6 @@ func loopbackURL(boundHost string) string {
 	return address.String()
 }
 
-func waitUntilReady(
-	ctx context.Context,
-	verify func(context.Context, mdruntime.ReadyState) error,
-	state mdruntime.ReadyState,
-	serveErrors <-chan error,
-) error {
-	ticker := time.NewTicker(10 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		if err := verify(ctx, state); err == nil {
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("wait for HTTP readiness: %w", ctx.Err())
-		case serveErr := <-serveErrors:
-			return fmt.Errorf("serve HTTP before readiness: %w", serveErr)
-		case <-ticker.C:
-		}
-	}
-}
-
 func printStartedInstance(
 	output io.Writer,
 	canonicalRoot string,
@@ -346,16 +260,6 @@ func printStartedInstance(
 			"Waiting for a browser connection. Press Ctrl+C to stop.\n",
 		canonicalRoot,
 		documentCount,
-		instanceURL,
-	)
-}
-
-func printExistingInstance(output io.Writer, canonicalRoot, instanceURL string) {
-	fmt.Fprintf(
-		output,
-		"mdReview\n\nDirectory: %s\nURL:       %s\n\n"+
-			"An existing mdReview instance is already serving this directory.\n",
-		canonicalRoot,
 		instanceURL,
 	)
 }

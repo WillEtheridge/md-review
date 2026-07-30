@@ -17,42 +17,14 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
-func forEachWorkspaceMode(
-	t *testing.T,
-	test func(*testing.T, filesystem.ResolutionMode),
-) {
+func openWorkspace(t *testing.T, root string) *workspace.Service {
 	t.Helper()
-	for _, mode := range []filesystem.ResolutionMode{
-		filesystem.Openat2Only,
-		filesystem.OpenatFallback,
-	} {
-		name := "openat2"
-		if mode == filesystem.OpenatFallback {
-			name = "openat-fallback"
-		}
-		t.Run(name, func(t *testing.T) {
-			test(t, mode)
-		})
-	}
-}
-
-func openWorkspace(
-	t *testing.T,
-	root string,
-	mode filesystem.ResolutionMode,
-) *workspace.Service {
-	t.Helper()
-	service, err := workspace.Open(root, workspace.Options{FilesystemMode: mode})
+	service, err := workspace.Open(root, workspace.Options{})
 	if err != nil {
-		if mode == filesystem.Openat2Only &&
-			(errors.Is(err, unix.ENOSYS) || errors.Is(err, unix.EINVAL)) {
-			t.Skipf("openat2 is unavailable: %v", err)
-		}
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -73,75 +45,73 @@ func copyDiscoveryFixture(t *testing.T) string {
 }
 
 func TestDiscoveryCompatibilityFixture(t *testing.T) {
-	forEachWorkspaceMode(t, func(t *testing.T, mode filesystem.ResolutionMode) {
-		root := copyDiscoveryFixture(t)
-		if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(
-			filepath.Join(root, ".git", "never.md"),
-			[]byte("not discoverable"),
-			0o644,
-		); err != nil {
-			t.Fatal(err)
-		}
+	root := copyDiscoveryFixture(t)
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, ".git", "never.md"),
+		[]byte("not discoverable"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
 
-		service := openWorkspace(t, root, mode)
-		snapshot, err := service.Snapshot(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if snapshot.Revision != 1 {
-			t.Fatalf("Revision = %d, want 1", snapshot.Revision)
-		}
-		if snapshot.DocumentCount != 11 {
-			t.Fatalf("DocumentCount = %d, want 11", snapshot.DocumentCount)
-		}
-		if snapshot.InitialDocumentPath == nil || *snapshot.InitialDocumentPath != "README.md" {
-			t.Fatalf("InitialDocumentPath = %v, want README.md", snapshot.InitialDocumentPath)
-		}
-		if len(snapshot.Warnings) != 0 {
-			t.Fatalf("Warnings = %+v, want none", snapshot.Warnings)
-		}
+	service := openWorkspace(t, root)
+	snapshot, err := service.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Revision != 1 {
+		t.Fatalf("Revision = %d, want 1", snapshot.Revision)
+	}
+	if snapshot.DocumentCount != 11 {
+		t.Fatalf("DocumentCount = %d, want 11", snapshot.DocumentCount)
+	}
+	if snapshot.InitialDocumentPath == nil || *snapshot.InitialDocumentPath != "README.md" {
+		t.Fatalf("InitialDocumentPath = %v, want README.md", snapshot.InitialDocumentPath)
+	}
+	if len(snapshot.Warnings) != 0 {
+		t.Fatalf("Warnings = %+v, want none", snapshot.Warnings)
+	}
 
-		wantOrder := []string{
-			".hidden/",
-			".hidden/notes.md",
-			"alpha/",
-			"alpha/index.md",
-			"docs/",
-			"docs/deeper/",
-			"docs/deeper/guide.md",
-			"docs/deeper/only-here.md",
-			"docs/nested-keep.md",
-			"Zoo/",
-			"Zoo/index.md",
-			"A.md",
-			"a.md",
-			"B.md",
-			"README.md",
-			"wild-keep.md",
+	wantOrder := []string{
+		".hidden/",
+		".hidden/notes.md",
+		"alpha/",
+		"alpha/index.md",
+		"docs/",
+		"docs/deeper/",
+		"docs/deeper/guide.md",
+		"docs/deeper/only-here.md",
+		"docs/nested-keep.md",
+		"Zoo/",
+		"Zoo/index.md",
+		"A.md",
+		"a.md",
+		"B.md",
+		"README.md",
+		"wild-keep.md",
+	}
+	if got := flattenNavigation(snapshot.Navigation); !slices.Equal(got, wantOrder) {
+		t.Fatalf("navigation order:\n got %v\nwant %v", got, wantOrder)
+	}
+	for _, excluded := range []string{
+		".git/never.md",
+		"UPPER.MD",
+		"anchored.md",
+		"root-ignored.md",
+		"wild-drop.md",
+		"ignored-dir/never.md",
+		"docs/nested-drop.md",
+		"docs/only-here.md",
+		"docs/root-ignored.md",
+		"docs/side.md.review.json",
+	} {
+		if slices.Contains(flattenNavigation(snapshot.Navigation), excluded) {
+			t.Errorf("excluded path %q appears in navigation", excluded)
 		}
-		if got := flattenNavigation(snapshot.Navigation); !slices.Equal(got, wantOrder) {
-			t.Fatalf("navigation order:\n got %v\nwant %v", got, wantOrder)
-		}
-		for _, excluded := range []string{
-			".git/never.md",
-			"UPPER.MD",
-			"anchored.md",
-			"root-ignored.md",
-			"wild-drop.md",
-			"ignored-dir/never.md",
-			"docs/nested-drop.md",
-			"docs/only-here.md",
-			"docs/root-ignored.md",
-			"docs/side.md.review.json",
-		} {
-			if slices.Contains(flattenNavigation(snapshot.Navigation), excluded) {
-				t.Errorf("excluded path %q appears in navigation", excluded)
-			}
-		}
-	})
+	}
 }
 
 func TestSnapshotReturnsIndependentNavigation(t *testing.T) {
@@ -149,7 +119,7 @@ func TestSnapshotReturnsIndependentNavigation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("original"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 
 	first, err := service.Snapshot(context.Background())
 	if err != nil {
@@ -177,91 +147,89 @@ func TestRootReturnsCanonicalWorkspacePath(t *testing.T) {
 	if err := os.Symlink(realRoot, linkRoot); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, linkRoot, filesystem.Auto)
+	service := openWorkspace(t, linkRoot)
 	if service.Root() != realRoot {
 		t.Fatalf("Root() = %q, want canonical %q", service.Root(), realRoot)
 	}
 }
 
 func TestUnsafeAndOversizedIgnoreFilesWarnAndRemainTraversable(t *testing.T) {
-	forEachWorkspaceMode(t, func(t *testing.T, mode filesystem.ResolutionMode) {
-		root := t.TempDir()
-		cases := readUnsafeIgnoreCases(t)
-		for _, test := range cases {
-			if err := os.Mkdir(filepath.Join(root, test.Directory), 0o755); err != nil {
+	root := t.TempDir()
+	cases := readUnsafeIgnoreCases(t)
+	for _, test := range cases {
+		if err := os.Mkdir(filepath.Join(root, test.Directory), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			filepath.Join(root, test.Directory, "visible.md"),
+			[]byte("visible"),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+		ignorePath := filepath.Join(root, test.Directory, ".gitignore")
+		switch test.Kind {
+		case "fifo":
+			if err := unix.Mkfifo(ignorePath, 0o600); err != nil {
 				t.Fatal(err)
 			}
+		case "socket":
+			listener, err := net.Listen("unix", ignorePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				if err := listener.Close(); err != nil {
+					t.Error(err)
+				}
+			})
+		case "symlink":
+			if err := os.Symlink("/dev/null", ignorePath); err != nil {
+				t.Fatal(err)
+			}
+		case "oversized":
 			if err := os.WriteFile(
-				filepath.Join(root, test.Directory, "visible.md"),
-				[]byte("visible"),
-				0o644,
+				ignorePath,
+				bytes.Repeat([]byte("x"), int(limits.MaxGitignoreFileBytes+1)),
+				0o600,
 			); err != nil {
 				t.Fatal(err)
 			}
-			ignorePath := filepath.Join(root, test.Directory, ".gitignore")
-			switch test.Kind {
-			case "fifo":
-				if err := unix.Mkfifo(ignorePath, 0o600); err != nil {
-					t.Fatal(err)
-				}
-			case "socket":
-				listener, err := net.Listen("unix", ignorePath)
-				if err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() {
-					if err := listener.Close(); err != nil {
-						t.Error(err)
-					}
-				})
-			case "symlink":
-				if err := os.Symlink("/dev/null", ignorePath); err != nil {
-					t.Fatal(err)
-				}
-			case "oversized":
-				if err := os.WriteFile(
-					ignorePath,
-					bytes.Repeat([]byte("x"), int(limits.MaxGitignoreFileBytes+1)),
-					0o600,
-				); err != nil {
-					t.Fatal(err)
-				}
-			default:
-				t.Fatalf("unknown unsafe ignore fixture kind %q", test.Kind)
-			}
+		default:
+			t.Fatalf("unknown unsafe ignore fixture kind %q", test.Kind)
 		}
-		if err := unix.Mkfifo(filepath.Join(root, "pipe.md"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Symlink("/etc/passwd", filepath.Join(root, "link.md")); err != nil {
-			t.Fatal(err)
-		}
+	}
+	if err := unix.Mkfifo(filepath.Join(root, "pipe.md"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc/passwd", filepath.Join(root, "link.md")); err != nil {
+		t.Fatal(err)
+	}
 
-		service := openWorkspace(t, root, mode)
-		snapshot, err := service.Snapshot(context.Background())
-		if err != nil {
-			t.Fatal(err)
+	service := openWorkspace(t, root)
+	snapshot, err := service.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.DocumentCount != 4 {
+		t.Fatalf("DocumentCount = %d, want 4; navigation = %v", snapshot.DocumentCount, flattenNavigation(snapshot.Navigation))
+	}
+	codesByPath := make(map[string]string, len(snapshot.Warnings))
+	for _, warning := range snapshot.Warnings {
+		codesByPath[warning.Path] = warning.Code
+	}
+	wantCodes := map[string]string{
+		"pipe.md": workspace.WarningCodeEntryUnsafe,
+		"link.md": workspace.WarningCodeEntryUnsafe,
+	}
+	for _, test := range cases {
+		wantCodes[test.Directory+"/.gitignore"] = test.WarningCode
+	}
+	for relativePath, wantCode := range wantCodes {
+		if got := codesByPath[relativePath]; got != wantCode {
+			t.Errorf("warning code for %s = %q, want %q; warnings = %+v", relativePath, got, wantCode, snapshot.Warnings)
 		}
-		if snapshot.DocumentCount != 4 {
-			t.Fatalf("DocumentCount = %d, want 4; navigation = %v", snapshot.DocumentCount, flattenNavigation(snapshot.Navigation))
-		}
-		codesByPath := make(map[string]string, len(snapshot.Warnings))
-		for _, warning := range snapshot.Warnings {
-			codesByPath[warning.Path] = warning.Code
-		}
-		wantCodes := map[string]string{
-			"pipe.md": workspace.WarningCodeEntryUnsafe,
-			"link.md": workspace.WarningCodeEntryUnsafe,
-		}
-		for _, test := range cases {
-			wantCodes[test.Directory+"/.gitignore"] = test.WarningCode
-		}
-		for relativePath, wantCode := range wantCodes {
-			if got := codesByPath[relativePath]; got != wantCode {
-				t.Errorf("warning code for %s = %q, want %q; warnings = %+v", relativePath, got, wantCode, snapshot.Warnings)
-			}
-		}
-	})
+	}
 }
 
 type unsafeIgnoreCase struct {
@@ -306,7 +274,7 @@ func TestUnsafeNestedIgnoreKeepsInheritedRules(t *testing.T) {
 		}
 	}
 
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 	snapshot, err := service.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -341,7 +309,7 @@ func TestUnreadableDirectoryWarnsAndDoesNotBlockSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 	snapshot, err := service.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -365,7 +333,7 @@ func TestOversizedMarkdownRemainsVisible(t *testing.T) {
 	if err := os.Truncate(filepath.Join(root, "oversized.md"), sizeBytes); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 
 	snapshot, err := service.Snapshot(context.Background())
 	if err != nil {
@@ -399,7 +367,7 @@ func TestReadDocumentContractsAndChangedEntries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 
 	content, err := service.ReadDocument(context.Background(), "valid.md")
 	if err != nil {
@@ -458,7 +426,7 @@ func TestReadDocumentAfterCloseReportsReadFailure(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "document.md"), []byte("source"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 	if err := service.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -478,7 +446,7 @@ func TestInitialDocumentFallsBackDepthFirstAndEmptyIsNil(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "root.md"), []byte("root"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 	snapshot, err := service.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -487,7 +455,7 @@ func TestInitialDocumentFallsBackDepthFirstAndEmptyIsNil(t *testing.T) {
 		t.Fatalf("InitialDocumentPath = %v, want a/nested.md", snapshot.InitialDocumentPath)
 	}
 
-	empty := openWorkspace(t, t.TempDir(), filesystem.Auto)
+	empty := openWorkspace(t, t.TempDir())
 	emptySnapshot, err := empty.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -502,7 +470,7 @@ func TestContextCancellation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "document.md"), []byte("source"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root, filesystem.Auto)
+	service := openWorkspace(t, root)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

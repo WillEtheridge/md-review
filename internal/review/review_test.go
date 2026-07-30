@@ -287,8 +287,7 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 	if err := json.Unmarshal(createFixture, &createResult); err != nil {
 		t.Fatalf("decode published create response: %v", err)
 	}
-	if createResult.Durability != DurabilityDurable ||
-		!validRevision(createResult.DocumentRevision) ||
+	if !validRevision(createResult.DocumentRevision) ||
 		!validRevision(createResult.ReviewRevision) ||
 		createResult.Thread.Attachment.State != AttachmentAttached {
 		t.Fatalf("published create response = %+v", createResult)

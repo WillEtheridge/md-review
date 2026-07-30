@@ -2,7 +2,7 @@
 // request-refreshed navigation snapshots through slash-relative identities.
 //
 // It owns ignore semantics and index membership. All operating-system access
-// remains in the contained filesystem gateway.
+// remains in the portable filesystem gateway.
 package workspace
 
 import (
@@ -26,10 +26,6 @@ import (
 
 // Options controls workspace construction.
 type Options struct {
-	// FilesystemMode selects automatic, modern-only, or forced-fallback
-	// descriptor-relative resolution.
-	FilesystemMode filesystem.ResolutionMode
-
 	// Now supplies scan freshness time and may be called concurrently.
 	// Production callers leave it nil.
 	Now func() time.Time
@@ -95,7 +91,7 @@ type NavigationEntry struct {
 	// Availability is meaningful only when Kind is EntryKindDocument.
 	Availability Availability
 
-	// DocumentMetadataRevision is the opaque hash of the scan-time Linux
+	// DocumentMetadataRevision is the opaque hash of the scan-time portable
 	// metadata signature for a document.
 	DocumentMetadataRevision string
 
@@ -201,7 +197,7 @@ func (mutex contextMutex) unlock() {
 
 const scanFreshness = time.Second
 
-// Service owns the contained gateway and request-refreshed workspace index.
+// Service owns the portable gateway and request-refreshed workspace index.
 //
 // Close must be called after request handling has stopped.
 type Service struct {
@@ -223,7 +219,7 @@ type Service struct {
 	lastScanFailureTime time.Time
 }
 
-// Open canonicalises root, opens its contained gateway, and builds revision one.
+// Open canonicalises root, opens its filesystem gateway, and builds revision one.
 func Open(root string, options Options) (*Service, error) {
 	scan := scanWorkspace
 	if options.Measurements != nil {
@@ -237,7 +233,7 @@ func openWithScanner(
 	options Options,
 	scan scanFunction,
 ) (*Service, error) {
-	gateway, err := filesystem.Open(root, options.FilesystemMode)
+	gateway, err := filesystem.Open(root)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +268,7 @@ func openWithScanner(
 	}, nil
 }
 
-// Close releases the contained workspace descriptor. Repeated calls return nil.
+// Close prevents future workspace filesystem operations. Repeated calls return nil.
 func (service *Service) Close() error {
 	return service.gateway.Close()
 }
@@ -283,7 +279,7 @@ func (service *Service) Root() string {
 }
 
 // Snapshot returns an independent copy of the current workspace index. A stale
-// request synchronously drives one coalesced descriptor-relative scan.
+// request synchronously drives one coalesced portable metadata scan.
 func (service *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return Snapshot{}, err
@@ -477,13 +473,9 @@ func sameSnapshotState(first, second Snapshot) bool {
 func metadataRevision(signature filesystem.MetadataSignature) string {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte{1, byte(signature.Kind)})
-	writeMetadataUint64(hash, signature.Device)
-	writeMetadataUint64(hash, signature.Inode)
+	_, _ = hash.Write([]byte(signature.RelativePath))
 	writeMetadataUint64(hash, uint64(signature.SizeBytes))
-	writeMetadataUint64(hash, uint64(signature.ModificationTime.Seconds))
-	writeMetadataUint64(hash, uint64(signature.ModificationTime.Nanoseconds))
-	writeMetadataUint64(hash, uint64(signature.ChangeTime.Seconds))
-	writeMetadataUint64(hash, uint64(signature.ChangeTime.Nanoseconds))
+	writeMetadataUint64(hash, uint64(signature.ModificationUnixNano))
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

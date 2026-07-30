@@ -435,7 +435,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   );
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [durabilityNotice, setDurabilityNotice] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>(initialTheme);
   const documentPanel = useRef<HTMLElement>(null);
   const mutationControllerRef = useRef<AbortController | null>(null);
@@ -1079,7 +1078,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     operationEditorActiveRef.current = false;
     setOperationEditorActive(false);
     setActiveThreadId(null);
-    setDurabilityNotice(null);
     expectDocumentFocus(path);
     selectAndLoadDocument(path);
   };
@@ -1091,7 +1089,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     operationEditorActiveRef.current = false;
     setOperationEditorActive(false);
     setActiveThreadId(null);
-    setDurabilityNotice(null);
     setPendingFragment(destination);
     expectDocumentFocus(destination.path);
     selectAndLoadDocument(destination.path);
@@ -1104,7 +1101,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleStartTextComment = (anchor: TextThreadAnchor): void => {
-    setDurabilityNotice(null);
     updateComposer({
       kind: "text",
       anchor,
@@ -1116,7 +1112,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleStartDocumentComment = (): void => {
-    setDurabilityNotice(null);
     updateComposer({
       kind: "document",
       draft: "",
@@ -1205,11 +1200,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
         });
         updateComposer(null);
         setActiveThreadId(response.thread.id);
-        setDurabilityNotice(
-          response.durability === "uncertain"
-            ? "Comment saved, but crash durability is uncertain. Do not retry it."
-            : null
-        );
         window.getSelection()?.removeAllRanges();
         // The creation response has no target fingerprint. Reconcile the
         // sidecar before enabling lifecycle controls for this thread.
@@ -1307,11 +1297,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           };
         });
         setActiveThreadId((current) => (current === operation.threadId ? null : current));
-        setDurabilityNotice(
-          response.durability === "uncertain"
-            ? "Thread deleted, but crash durability is uncertain. Do not retry it."
-            : null
-        );
         if (response.documentRevision !== submittedDocumentRevision) {
           pollCoordinatorRef.current?.requestNow();
         }
@@ -1391,11 +1376,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
         };
       });
       setActiveThreadId(operation.threadId);
-      setDurabilityNotice(
-        response.durability === "uncertain"
-          ? "Your change was saved, but crash durability is uncertain. Do not retry it."
-          : null
-      );
       if (response.documentRevision !== submittedDocumentRevision) {
         pollCoordinatorRef.current?.requestNow();
       }
@@ -1566,7 +1546,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           review={document.status === "ready" ? document.review : null}
           composer={composer}
           activeThreadId={activeThreadId}
-          durabilityNotice={durabilityNotice}
           documentChangeNotice={
             pendingDocumentChange && (composer !== null || operationEditorActive)
               ? DOCUMENT_CHANGED_NOTICE

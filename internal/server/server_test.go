@@ -16,40 +16,17 @@ import (
 
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/review"
-	"mdreview.dev/mdreview/internal/runtime"
 	"mdreview.dev/mdreview/internal/workspace"
 )
-
-func TestHealthReturnsFrozenShape(t *testing.T) {
-	server := newTestServer(t)
-	request := httptest.NewRequest(http.MethodGet, "http://127.0.0.1:4242/api/health", nil)
-	response := httptest.NewRecorder()
-	server.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
-	}
-	assertSecurityHeaders(t, response)
-	if response.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("API Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
-	}
-	var health healthResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &health); err != nil {
-		t.Fatalf("decode health: %v", err)
-	}
-	if health != (healthResponse{Root: "/canonical/workspace", InstanceNonce: "instance-nonce"}) {
-		t.Fatalf("health = %#v", health)
-	}
-}
 
 func TestRequestIDFailureRetainsSecurityAndErrorContract(t *testing.T) {
 	server, err := New(Config{
 		Assets: fstest.MapFS{
 			"index.html": &fstest.MapFile{Data: []byte("application shell")},
 		},
-		Workspace:     fakeWorkspace{},
-		Review:        fakeReviewStore{},
-		InstanceNonce: "instance-nonce",
-		BoundHost:     "127.0.0.1:4242",
+		Workspace: fakeWorkspace{},
+		Review:    fakeReviewStore{},
+		BoundHost: "127.0.0.1:4242",
 		NewRequestID: func() (string, error) {
 			return "", errors.New("entropy unavailable")
 		},
@@ -61,7 +38,7 @@ func TestRequestIDFailureRetainsSecurityAndErrorContract(t *testing.T) {
 	response := httptest.NewRecorder()
 	server.ServeHTTP(
 		response,
-		authenticatedRequest(http.MethodGet, "http://127.0.0.1:4242/api/health"),
+		authenticatedRequest(http.MethodGet, "http://127.0.0.1:4242/api/state"),
 	)
 
 	if response.Code != http.StatusInternalServerError {
@@ -95,7 +72,7 @@ func TestServerRejectsWrongHostAndAPIMethods(t *testing.T) {
 	}
 	assertErrorCode(t, response, "invalidHost")
 
-	request = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4242/api/health", nil)
+	request = httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4242/api/state", nil)
 	response = httptest.NewRecorder()
 	server.ServeHTTP(response, request)
 	if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != http.MethodGet {
@@ -343,7 +320,6 @@ func TestCreateThreadDecodesFrozenContractAndReturnsCreated(t *testing.T) {
 	result := review.CreateThreadResult{
 		DocumentRevision: documentRevision,
 		ReviewRevision:   strings.Repeat("c", 64),
-		Durability:       review.DurabilityDurable,
 		Thread: review.ResolvedThread{
 			ID: "thread_CCCCCCCCCCCCCCCCCC",
 			Anchor: review.Anchor{
@@ -397,7 +373,6 @@ func TestCreateThreadDecodesFrozenContractAndReturnsCreated(t *testing.T) {
 		t.Fatalf("decode create response: %v", err)
 	}
 	if created.ReviewRevision != result.ReviewRevision ||
-		created.Durability != review.DurabilityDurable ||
 		created.Thread.ID != result.Thread.ID {
 		t.Fatalf("create response = %#v", created)
 	}
@@ -567,71 +542,6 @@ func TestDocumentErrorsUseFrozenCodesWithoutPathDisclosure(t *testing.T) {
 	}
 }
 
-func TestHealthVerifierUsesCleanLoopbackURL(t *testing.T) {
-	instance := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/health" {
-			t.Fatalf("health path = %q", request.URL.Path)
-		}
-		if authorization := request.Header.Get("Authorization"); authorization != "" {
-			t.Fatalf("Authorization = %q, want empty", authorization)
-		}
-		_ = json.NewEncoder(response).Encode(healthResponse{Root: "/canonical/workspace", InstanceNonce: "nonce"})
-	}))
-	defer instance.Close()
-	loopbackURL := strings.Replace(instance.URL, "127.0.0.1", "127.0.0.1", 1) + "/"
-	verifier := HealthVerifier(nil)
-	if err := verifier(context.Background(), runtime.ReadyState{
-		Root: "/canonical/workspace", InstanceNonce: "nonce", URL: loopbackURL,
-	}); err != nil {
-		t.Fatalf("HealthVerifier() error = %v", err)
-	}
-}
-
-func TestHealthVerifierRejectsRedirects(t *testing.T) {
-	redirectTargetReached := false
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		redirectTargetReached = true
-	}))
-	defer target.Close()
-	instance := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		http.Redirect(response, request, target.URL, http.StatusFound)
-	}))
-	defer instance.Close()
-	verifier := HealthVerifier(nil)
-	err := verifier(context.Background(), runtime.ReadyState{
-		Root: "/canonical/workspace", InstanceNonce: "nonce", URL: instance.URL + "/",
-	})
-	if err == nil {
-		t.Fatal("HealthVerifier() error = nil, want redirect rejection")
-	}
-	if redirectTargetReached {
-		t.Fatal("HealthVerifier followed a redirect")
-	}
-}
-
-func TestHealthVerifierRejectsMalformedReadyURLs(t *testing.T) {
-	verifier := HealthVerifier(nil)
-	for _, rawURL := range []string{
-		"%",
-		"https://127.0.0.1:4242/",
-		"http://localhost:4242/",
-		"http://127.0.0.1/",
-		"http://127.0.0.1:99999/",
-		"http://user@127.0.0.1:4242/",
-		"http://127.0.0.1:4242/?access=stale",
-		"http://127.0.0.1:4242/#access=stale",
-	} {
-		t.Run(rawURL, func(t *testing.T) {
-			err := verifier(context.Background(), runtime.ReadyState{
-				Root: "/canonical/workspace", InstanceNonce: "nonce", URL: rawURL,
-			})
-			if err == nil {
-				t.Fatal("HealthVerifier() error = nil, want malformed URL rejection")
-			}
-		})
-	}
-}
-
 func newTestServer(t *testing.T) *Server {
 	return newTestServerWithWorkspace(t, fakeWorkspace{})
 }
@@ -651,10 +561,9 @@ func newTestServerWithServices(
 			"index.html":           &fstest.MapFile{Data: []byte("application shell")},
 			"assets/app-abcdef.js": &fstest.MapFile{Data: []byte("console.log('app')")},
 		},
-		Workspace:     testWorkspace,
-		Review:        testReview,
-		InstanceNonce: "instance-nonce",
-		BoundHost:     "127.0.0.1:4242",
+		Workspace: testWorkspace,
+		Review:    testReview,
+		BoundHost: "127.0.0.1:4242",
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

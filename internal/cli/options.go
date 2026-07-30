@@ -12,17 +12,17 @@ import (
 type Command uint8
 
 const (
-	// Serve starts or reuses the foreground Markdown review service.
+	// Serve starts the foreground Markdown review service.
 	Serve Command = iota
 	// Version prints the installed mdReview release version.
 	Version
-	// Setup interactively selects detected Agent Skill targets.
+	// Setup interactively selects supported Agent Skill targets.
 	Setup
-	// SkillStatus inspects the canonical skill and every supported target.
+	// SkillStatus inspects every supported global target.
 	SkillStatus
 	// SkillInstall installs the skill for explicitly named targets.
 	SkillInstall
-	// SkillUninstall removes unchanged mdReview-owned target links.
+	// SkillUninstall removes explicitly selected target files.
 	SkillUninstall
 )
 
@@ -32,18 +32,16 @@ type Target string
 const (
 	TargetCodex  Target = "codex"
 	TargetClaude Target = "claude"
-	TargetGemini Target = "gemini"
+	TargetPi     Target = "pi"
 )
 
 // Options is one validated mdReview command-line configuration.
 type Options struct {
-	Command        Command
-	Directory      string
-	Port           uint16
-	PortExplicit   bool
-	ManagedSession bool
-	Targets        []Target
-	Force          bool
+	Command      Command
+	Directory    string
+	Port         uint16
+	PortExplicit bool
+	Targets      []Target
 }
 
 // Parse converts command-line arguments to Options. workingDirectory is called
@@ -111,11 +109,6 @@ func Parse(
 			}
 			options.Port = port
 			options.PortExplicit = true
-		case argument == "--managed-session":
-			if options.ManagedSession {
-				return Options{}, fmt.Errorf("--managed-session may be specified only once")
-			}
-			options.ManagedSession = true
 		case len(argument) > 0 && argument[0] == '-':
 			return Options{}, fmt.Errorf("unknown option %q", argument)
 		case directorySet:
@@ -161,7 +154,7 @@ func parseSkillMutation(command Command, arguments []string) (Options, error) {
 		switch {
 		case argument == "--target":
 			if index+1 >= len(arguments) {
-				return Options{}, fmt.Errorf("--target requires codex, claude, or gemini")
+				return Options{}, fmt.Errorf("--target requires codex, claude, or pi")
 			}
 			target, err := parseTarget(arguments[index+1])
 			if err != nil {
@@ -179,11 +172,6 @@ func parseSkillMutation(command Command, arguments []string) (Options, error) {
 			if err := addTarget(&options, seenTargets, target); err != nil {
 				return Options{}, err
 			}
-		case argument == "--force" && command == SkillInstall:
-			if options.Force {
-				return Options{}, fmt.Errorf("--force may be specified only once")
-			}
-			options.Force = true
 		case len(argument) > 0 && argument[0] == '-':
 			return Options{}, fmt.Errorf("unknown option %q", argument)
 		default:
@@ -200,10 +188,10 @@ func parseSkillMutation(command Command, arguments []string) (Options, error) {
 func parseTarget(value string) (Target, error) {
 	target := Target(value)
 	switch target {
-	case TargetCodex, TargetClaude, TargetGemini:
+	case TargetCodex, TargetClaude, TargetPi:
 		return target, nil
 	default:
-		return "", fmt.Errorf("--target must be codex, claude, or gemini")
+		return "", fmt.Errorf("--target must be codex, claude, or pi")
 	}
 }
 

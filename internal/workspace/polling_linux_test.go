@@ -46,7 +46,7 @@ func openPollingWorkspace(
 	t.Helper()
 	service, err := openWithScanner(
 		root,
-		Options{FilesystemMode: filesystem.Auto, Now: clock.Now},
+		Options{Now: clock.Now},
 		scan,
 	)
 	if err != nil {

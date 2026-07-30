@@ -51,7 +51,7 @@ func (reader contextReader) Read(buffer []byte) (int, error) {
 }
 
 // ReadAsset resolves one relative image from a currently indexed Markdown
-// identity and keeps the contained descriptor scoped to visit. The visitor
+// identity and keeps the validated file handle scoped to visit. The visitor
 // must apply content-type validation and a limit-plus-one streaming bound.
 func (service *Service) ReadAsset(
 	ctx context.Context,

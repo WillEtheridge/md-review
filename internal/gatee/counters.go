@@ -40,8 +40,8 @@ type Counters struct {
 	assetStreamBytes       atomic.Uint64
 }
 
-// RecordCompleteWorkspaceScan records one successfully completed descriptor-
-// relative scan. Failed or cancelled scan attempts are deliberately excluded.
+// RecordCompleteWorkspaceScan records one successfully completed workspace
+// metadata scan. Failed or cancelled attempts are deliberately excluded.
 func (counters *Counters) RecordCompleteWorkspaceScan() {
 	if counters != nil {
 		counters.completeWorkspaceScans.Add(1)

@@ -37,17 +37,8 @@ func TestParseServe(t *testing.T) {
 				PortExplicit: true,
 			},
 		},
-		{
-			name:      "managed session",
-			arguments: []string{"--managed-session", "./skill"},
-			want: Options{
-				Command:        Serve,
-				Directory:      "./skill",
-				ManagedSession: true,
-			},
-		},
 		{name: "duplicate port", arguments: []string{"--port", "1", "--port=2"}, wantError: true},
-		{name: "duplicate managed mode", arguments: []string{"--managed-session", "--managed-session"}, wantError: true},
+		{name: "managed mode removed", arguments: []string{"--managed-session"}, wantError: true},
 		{name: "missing port", arguments: []string{"--port"}, wantError: true},
 		{name: "empty equals port", arguments: []string{"--port="}, wantError: true},
 		{name: "zero port", arguments: []string{"--port=0"}, wantError: true},
@@ -94,12 +85,11 @@ func TestParseManagementCommands(t *testing.T) {
 		{name: "skill missing action", arguments: []string{"skill"}, wantError: true},
 		{name: "skill unknown action", arguments: []string{"skill", "repair"}, wantError: true},
 		{
-			name:      "install targets and force",
-			arguments: []string{"skill", "install", "--target", "codex", "--target=gemini", "--force"},
+			name:      "install targets",
+			arguments: []string{"skill", "install", "--target", "codex", "--target=claude", "--target", "pi"},
 			want: Options{
 				Command: SkillInstall,
-				Targets: []Target{TargetCodex, TargetGemini},
-				Force:   true,
+				Targets: []Target{TargetCodex, TargetClaude, TargetPi},
 			},
 		},
 		{
@@ -114,7 +104,7 @@ func TestParseManagementCommands(t *testing.T) {
 		{name: "uninstall requires target", arguments: []string{"skill", "uninstall"}, wantError: true},
 		{name: "duplicate target", arguments: []string{"skill", "install", "--target", "codex", "--target=codex"}, wantError: true},
 		{name: "unknown target", arguments: []string{"skill", "install", "--target", "other"}, wantError: true},
-		{name: "uninstall rejects force", arguments: []string{"skill", "uninstall", "--target", "codex", "--force"}, wantError: true},
+		{name: "install rejects force", arguments: []string{"skill", "install", "--target", "codex", "--force"}, wantError: true},
 		{name: "status rejects target", arguments: []string{"skill", "status", "--target", "codex"}, wantError: true},
 		{name: "install rejects managed", arguments: []string{"skill", "install", "--target", "codex", "--managed-session"}, wantError: true},
 		{name: "install rejects positional", arguments: []string{"skill", "install", "codex"}, wantError: true},

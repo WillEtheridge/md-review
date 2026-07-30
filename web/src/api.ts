@@ -169,7 +169,6 @@ export interface CreateThreadRequest {
 export interface CreateThreadResponse {
   documentRevision: string;
   reviewRevision: string;
-  durability: "durable" | "uncertain";
   thread: ReviewThread;
 }
 
@@ -201,7 +200,6 @@ export type DeleteThreadRequest = TargetOperationRequest;
 export interface MutationResponse {
   documentRevision: string;
   reviewRevision: string;
-  durability: "durable" | "uncertain";
   thread: ReviewThread;
   targets: TargetFingerprints;
 }
@@ -209,7 +207,6 @@ export interface MutationResponse {
 export interface DeleteThreadResponse {
   documentRevision: string;
   reviewRevision: string;
-  durability: "durable" | "uncertain";
   deletedThreadId: string;
 }
 
@@ -568,24 +565,11 @@ export function decodeReview(value: unknown): ReviewResponse {
 
 export function decodeCreateThreadResponse(value: unknown): CreateThreadResponse {
   const record = recordValue(value);
-  const durability = stringValue(record.durability);
-  if (durability !== "durable" && durability !== "uncertain") {
-    throw new ApiProtocolError();
-  }
   return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: revisionValue(record.reviewRevision),
-    durability,
     thread: decodeThread(record.thread)
   };
-}
-
-function durabilityValue(value: unknown): "durable" | "uncertain" {
-  const durability = stringValue(value);
-  if (durability !== "durable" && durability !== "uncertain") {
-    throw new ApiProtocolError();
-  }
-  return durability;
 }
 
 export function decodeMutationResponse(value: unknown): MutationResponse {
@@ -593,7 +577,6 @@ export function decodeMutationResponse(value: unknown): MutationResponse {
   return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: revisionValue(record.reviewRevision),
-    durability: durabilityValue(record.durability),
     thread: decodeThread(record.thread),
     targets: decodeTargetFingerprints(record.targets)
   };
@@ -604,7 +587,6 @@ export function decodeDeleteThreadResponse(value: unknown): DeleteThreadResponse
   return {
     documentRevision: revisionValue(record.documentRevision),
     reviewRevision: revisionValue(record.reviewRevision),
-    durability: durabilityValue(record.durability),
     deletedThreadId: nonEmptyString(record.deletedThreadId)
   };
 }

@@ -45,8 +45,8 @@ server, or comment-management CLI.
 
 ## Start the viewer
 
-Tell the user to run `mdreview [DIRECTORY]` in their own foreground terminal, substituting the
-workspace directory or omitting it for the current directory, and ask them to open the local URL
-it prints. Explain that mdReview does not open a browser automatically and that they stop it
-with Ctrl+C. Do not use `--managed-session`, `nohup`, or a detached or background launch. Do not
-claim that mdReview will stop at an agent-session boundary.
+Run `mdreview [DIRECTORY]` as an ordinary foreground child process, substituting the workspace
+directory or omitting it for the current directory, or ask the user to run it in their terminal.
+Ask the user to open the local URL it prints. Explain that mdReview does not open a browser
+automatically. The launcher owns the process and must stop it when the user ends the agent or review
+session; a user running it directly stops it with Ctrl+C. Do not use `nohup` or a detached launch.

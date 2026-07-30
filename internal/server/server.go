@@ -23,7 +23,6 @@ import (
 	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/review"
-	"mdreview.dev/mdreview/internal/runtime"
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
@@ -46,11 +45,10 @@ const (
 // Workspace-backed endpoints are added separately once internal/workspace is
 // available; this package does not recreate that package's domain types.
 type Config struct {
-	Assets        fs.FS
-	Workspace     Workspace
-	Review        ReviewStore
-	InstanceNonce string
-	BoundHost     string
+	Assets    fs.FS
+	Workspace Workspace
+	Review    ReviewStore
+	BoundHost string
 	// Measurements enables the loopback-only Gate E counter endpoint.
 	// Ordinary production callers leave it nil.
 	Measurements *gatee.Counters
@@ -61,14 +59,13 @@ type Config struct {
 
 // Server validates requests and serves embedded browser assets.
 type Server struct {
-	assets        fs.FS
-	workspace     Workspace
-	review        ReviewStore
-	instanceNonce string
-	boundHost     string
-	newRequestID  func() (string, error)
-	assetPermits  chan struct{}
-	measurements  *gatee.Counters
+	assets       fs.FS
+	workspace    Workspace
+	review       ReviewStore
+	boundHost    string
+	newRequestID func() (string, error)
+	assetPermits chan struct{}
+	measurements *gatee.Counters
 }
 
 // Workspace is the server's consumer-owned read-only view of an indexed
@@ -105,9 +102,6 @@ func New(config Config) (*Server, error) {
 	if config.Review == nil {
 		return nil, fmt.Errorf("server review store is required")
 	}
-	if config.InstanceNonce == "" {
-		return nil, fmt.Errorf("server instance nonce is required")
-	}
 	if config.BoundHost == "" {
 		return nil, fmt.Errorf("server bound host is required")
 	}
@@ -116,14 +110,13 @@ func New(config Config) (*Server, error) {
 		requestIDGenerator = newRequestID
 	}
 	return &Server{
-		assets:        config.Assets,
-		workspace:     config.Workspace,
-		review:        config.Review,
-		instanceNonce: config.InstanceNonce,
-		boundHost:     config.BoundHost,
-		newRequestID:  requestIDGenerator,
-		assetPermits:  make(chan struct{}, limits.MaxConcurrentImageStreams),
-		measurements:  config.Measurements,
+		assets:       config.Assets,
+		workspace:    config.Workspace,
+		review:       config.Review,
+		boundHost:    config.BoundHost,
+		newRequestID: requestIDGenerator,
+		assetPermits: make(chan struct{}, limits.MaxConcurrentImageStreams),
+		measurements: config.Measurements,
 	}, nil
 }
 
@@ -168,11 +161,6 @@ func (server *Server) applySecurityHeaders(response http.ResponseWriter) {
 func (server *Server) serveAPI(response http.ResponseWriter, request *http.Request, requestID string) {
 	response.Header().Set("Cache-Control", "no-store")
 	switch request.URL.Path {
-	case "/api/health":
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
-			return
-		}
-		server.writeJSON(response, http.StatusOK, healthResponse{Root: server.workspace.Root(), InstanceNonce: server.instanceNonce})
 	case "/api/state":
 		if !server.requireMethod(response, request, requestID, http.MethodGet) {
 			return
@@ -909,11 +897,6 @@ func (server *Server) writeJSON(response http.ResponseWriter, status int, value 
 	_ = json.NewEncoder(response).Encode(value)
 }
 
-type healthResponse struct {
-	Root          string `json:"root"`
-	InstanceNonce string `json:"instanceNonce"`
-}
-
 type stateResponse struct {
 	Status              string            `json:"status"`
 	WorkspaceRevision   uint64            `json:"workspaceRevision"`
@@ -1034,53 +1017,6 @@ type apiError struct {
 	Code      string `json:"code"`
 	Message   string `json:"message"`
 	RequestID string `json:"requestId"`
-}
-
-// HealthVerifier returns a runtime verifier that proves a ready record belongs
-// to the expected loopback process without following redirects.
-func HealthVerifier(client *http.Client) func(context.Context, runtime.ReadyState) error {
-	if client == nil {
-		client = &http.Client{Timeout: 500 * time.Millisecond}
-	}
-	copyClient := *client
-	if copyClient.Timeout <= 0 {
-		copyClient.Timeout = 500 * time.Millisecond
-	}
-	copyClient.CheckRedirect = func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
-	return func(ctx context.Context, state runtime.ReadyState) error {
-		parsed, err := url.Parse(state.URL)
-		if err != nil || parsed == nil {
-			return errors.New("ready instance URL is not a loopback HTTP URL")
-		}
-		port, portError := strconv.ParseUint(parsed.Port(), 10, 16)
-		if portError != nil || port == 0 || parsed.Scheme != "http" || parsed.User != nil ||
-			parsed.Hostname() != "127.0.0.1" || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return errors.New("ready instance URL is not a loopback HTTP URL")
-		}
-		parsed.Path = "/api/health"
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-		if err != nil {
-			return err
-		}
-		response, err := copyClient.Do(request)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return errors.New("ready instance health request was not successful")
-		}
-		var health healthResponse
-		if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&health); err != nil {
-			return err
-		}
-		if health.Root != state.Root || health.InstanceNonce != state.InstanceNonce {
-			return errors.New("ready instance identity did not match its runtime record")
-		}
-		return nil
-	}
 }
 
 func newRequestID() (string, error) {

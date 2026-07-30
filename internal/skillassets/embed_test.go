@@ -78,9 +78,10 @@ func TestCanonicalSkillContainsPortableWorkflow(t *testing.T) {
 		"residual race with uncoordinated direct writers",
 		"files directly",
 		"`mdreview [DIRECTORY]`",
-		"their own foreground terminal",
+		"ordinary foreground child process",
+		"The launcher owns the process",
 		"does not open a browser automatically",
-		"Do not use `--managed-session`, `nohup`",
+		"Do not use `nohup`",
 		"Ctrl+C",
 	}
 	for _, instruction := range requiredInstructions {

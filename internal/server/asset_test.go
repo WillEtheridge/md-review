@@ -248,9 +248,8 @@ func TestWorkspaceAssetGrowthMakesRealHTTPFetchFail(t *testing.T) {
 			)
 			return visit(reader, 1024)
 		}},
-		Review:        fakeReviewStore{},
-		InstanceNonce: "instance-nonce",
-		BoundHost:     testServer.Listener.Addr().String(),
+		Review:    fakeReviewStore{},
+		BoundHost: testServer.Listener.Addr().String(),
 	})
 	if err != nil {
 		t.Fatal(err)

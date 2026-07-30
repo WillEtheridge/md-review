@@ -8,6 +8,7 @@ PROJECT_DIRECTORY="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 node --test "${SCRIPT_DIRECTORY}/release/"*.test.mjs
 bash -n \
   "${SCRIPT_DIRECTORY}/build-release.sh" \
+  "${SCRIPT_DIRECTORY}/package-macos-preview.sh" \
   "${SCRIPT_DIRECTORY}/package-release.sh" \
   "${SCRIPT_DIRECTORY}/release/verify-binary.sh"
 node --check "${SCRIPT_DIRECTORY}/release/archive.mjs"

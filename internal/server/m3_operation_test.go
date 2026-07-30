@@ -21,7 +21,6 @@ func TestReviewOperationsDecodeFrozenContractsAndReturnAffectedState(t *testing.
 	mutationResult := review.MutationResult{
 		DocumentRevision: documentRevision,
 		ReviewRevision:   reviewRevision,
-		Durability:       review.DurabilityDurable,
 		Thread: review.ResolvedThread{
 			ID:         "thread_existing",
 			Anchor:     review.Anchor{Type: review.AnchorDocument},
@@ -116,7 +115,6 @@ func TestReviewOperationsDecodeFrozenContractsAndReturnAffectedState(t *testing.
 		deleteResult := review.DeleteThreadResult{
 			DocumentRevision: documentRevision,
 			ReviewRevision:   reviewRevision,
-			Durability:       review.DurabilityDurable,
 			DeletedThreadID:  "线程/one",
 		}
 		server := newTestServerWithServices(t, testWorkspace, fakeReviewStore{
@@ -260,7 +258,6 @@ func assertMutationResponse(
 		t.Fatalf("decode mutation response: %v", err)
 	}
 	if result.ReviewRevision != want.ReviewRevision ||
-		result.Durability != want.Durability ||
 		result.Thread.ID != want.Thread.ID ||
 		result.Targets.Threads["thread_existing"] != want.Targets.Threads["thread_existing"] {
 		t.Fatalf("mutation response = %#v, want %#v", result, want)

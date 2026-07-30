@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/gatee"
 )
 
@@ -27,8 +26,7 @@ func TestMeasurementsCountScansContentReadsAndIgnoreReuse(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	counters := &gatee.Counters{}
 	service, err := Open(root, Options{
-		FilesystemMode: filesystem.Auto,
-		Measurements:   counters,
+		Measurements: counters,
 		Now: func() time.Time {
 			return now
 		},

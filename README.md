@@ -1,6 +1,7 @@
 # mdReview
 
-mdReview is a local Linux application to review Markdown documents that coding agents make.
+mdReview is a local terminal application for Linux and Apple Silicon macOS to review Markdown
+documents that coding agents make.
 
 Use mdReview when an agent makes a plan, a specification, or another Markdown document. Read the
 document in a browser. Add a comment to the document or to selected text.
@@ -21,7 +22,8 @@ find sidecar comments and how to use them. You choose if and when to install the
 
 ![The mdReview interface with files, a Markdown document, and comments](web/tests/visual/m4-1440.visual.spec.ts-snapshots/rich-discussion-light-chromium-1440-linux.png)
 
-The v0.1 release target is Linux `amd64` (`GOAMD64=v1`).
+mdReview supports Linux on `amd64` and macOS on Apple silicon (`arm64`). It does not support Windows
+or Intel Mac computers.
 
 ## Use mdReview to
 
@@ -30,40 +32,98 @@ The v0.1 release target is Linux `amd64` (`GOAMD64=v1`).
 - Save comments with the Markdown file.
 - Give clear review data to a coding agent.
 
-## Download and run
+## Install
 
-From the GitHub release page, download the Linux `amd64` archive and extract it. Then run the binary
-against the directory you want to review:
+Open the [GitHub Releases page](https://github.com/WillEtheridge/md-review/releases). Download the
+archive for your operating system:
+
+| Operating system | Archive                                                |
+| ---------------- | ------------------------------------------------------ |
+| Linux `amd64`    | `mdreview-v0.1.0-linux-amd64.tar.gz`                   |
+| macOS `arm64`    | `mdreview-v0.2.0-preview.1-darwin-arm64.tar.gz`        |
+
+### Install on Linux
+
+Run these commands from the directory that contains the downloaded archive:
 
 ```bash
 tar -xzf mdreview-v0.1.0-linux-amd64.tar.gz
-./mdreview-v0.1.0-linux-amd64/mdreview /path/to/your/markdown
+mkdir -p "$HOME/.local/bin"
+install -m 0755 \
+  mdreview-v0.1.0-linux-amd64/mdreview \
+  "$HOME/.local/bin/mdreview"
+"$HOME/.local/bin/mdreview" --version
 ```
 
-It runs in the foreground and prints a local URL. Open that URL in your browser, then press `Ctrl+C`
-in the terminal when you are finished.
-
-## Install for repeated use
-
-To run `mdreview` from any directory, copy it into your local binary directory:
+If Bash cannot find `mdreview`, add the local binary directory to `PATH`:
 
 ```bash
-mkdir -p "$HOME/.local/bin"
-cp mdreview-v0.1.0-linux-amd64/mdreview "$HOME/.local/bin/"
-mdreview .
+printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.bashrc"
+source "$HOME/.bashrc"
 ```
 
-Make sure `$HOME/.local/bin` is on `PATH`.
+### Install on Apple silicon macOS
+
+Confirm that the Mac uses Apple silicon:
+
+```bash
+uname -m
+```
+
+Continue only if the command prints `arm64`.
+
+Run these commands from the directory that contains the downloaded archive:
+
+```bash
+tar -xzf mdreview-v0.2.0-preview.1-darwin-arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 \
+  mdreview-v0.2.0-preview.1-darwin-arm64/mdreview \
+  "$HOME/.local/bin/mdreview"
+printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.zprofile"
+source "$HOME/.zprofile"
+mdreview --version
+```
+
+The macOS archive is not signed or notarised. If macOS blocks the first start:
+
+1. Open **System Settings**.
+2. Select **Privacy & Security**.
+3. Find the message about `mdreview`.
+4. Select **Open Anyway**.
+5. Start `mdreview` again.
+
+### Install the optional Agent Skill
+
+Install the Agent Skill if you want Codex, Pi, or Claude Code to find and address review comments.
+mdReview works without the skill. Skill installation is global for your user account on Linux and
+macOS.
+
+For interactive installation, run:
+
+```bash
+mdreview setup
+```
+
+Use the Up and Down keys to move. Press Space to select or clear an agent. Press Enter to install the
+skill for the selected agents. Your selection authorises installation or replacement of those
+global skill files.
+
+For direct installation, select each target that you use:
+
+```bash
+mdreview skill install --target codex
+mdreview skill install --target claude
+mdreview skill install --target pi
+```
+
+See [Manage the Agent Skill](#manage-the-agent-skill) for status, file locations, and removal.
 
 ## Update
 
-Download and extract a newer release in the same way. Stop any running mdReview process with
-`Ctrl+C`, then replace the installed binary:
-
-```bash
-cp mdreview-v0.1.1-linux-amd64/mdreview "$HOME/.local/bin/"
-mdreview --version
-```
+Stop each running mdReview process with `Ctrl+C`. Download the new archive for your operating
+system. Extract the archive and repeat the installation steps for your operating system. The
+`install` command replaces the old binary.
 
 Your Markdown and adjacent review sidecars stay in your project directory, so an update does not
 migrate or alter your review data.
@@ -73,25 +133,40 @@ migrate or alter your review data.
 Building requires exactly Go 1.26.5, Node.js 26.2.0, and npm 11.13.0. Dependency installation may
 use the network; the resulting application has no Node.js runtime dependency.
 
-From an extracted source release:
+From an extracted source release, install the dependencies and build the browser files:
 
 ```bash
 npm --prefix web ci
 npm --prefix web run build
-rm -- web/dist/placeholder.txt
 mkdir -p build
+```
+
+On Linux `amd64`, build the Linux binary:
+
+```bash
 GOTOOLCHAIN=local GOWORK=off GOENV=off \
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
   go build -mod=readonly -trimpath -buildvcs=false -ldflags=-buildid= \
   -o build/mdreview ./cmd/mdreview
 ```
 
-The checked-in placeholder keeps a clean source tree valid for `go:embed`; the real frontend build
-is produced first, and the exact scaffold file is removed before compilation so it cannot enter the
-binary.
+On Apple silicon macOS, build the macOS binary:
 
-The release packaging and complete clean verification use a pinned environment. A locally built
-binary is not the certified release artifact unless it matches the recorded artifact hash.
+```bash
+GOTOOLCHAIN=local GOWORK=off GOENV=off \
+  CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
+  go build -mod=readonly -trimpath -buildvcs=false -ldflags=-buildid= \
+  -o build/mdreview ./cmd/mdreview
+```
+
+To make the Apple silicon macOS archive on Linux, run:
+
+```bash
+PATH="/path/to/go1.26.5/bin:$PATH" ./scripts/package-macos-preview.sh
+```
+
+The release process uses a pinned environment. A local build is not a release artifact unless it
+has the published checksum.
 
 ## Use it
 
@@ -116,7 +191,8 @@ Waiting for a browser connection. Press Ctrl+C to stop.
 ```
 
 mdReview does not open a browser. Open the printed URL yourself. Press `Ctrl+C` in the terminal to
-stop the application. v0.1 has no daemon, tray application, or separate stop command.
+stop the application. mdReview has no daemon, tray application, or separate stop command. The
+terminal or agent that launches the foreground process is responsible for stopping it.
 
 Then:
 
@@ -135,9 +211,10 @@ mdreview /path/to/project
 mdreview --port 4800 /path/to/project
 ```
 
-An explicit busy port is an error. Different directories can run in separate foreground processes on
-different ports. Starting the same canonical directory again as the same Unix user reports the
-existing instance's URL instead of starting a second writer.
+An explicit busy port is an error. Every invocation is independent. Different directories, or the
+same directory, can run in separate foreground processes on different ports. Concurrent instances
+still use revision checks and atomic sidecar replacement, but they are not a lossless multi-writer
+system.
 
 Use `mdreview --version` to confirm the installed release. The v0.1 CLI has no public `--help` flag;
 use the command reference below for supported commands.
@@ -157,7 +234,7 @@ To leave feedback:
 
 1. Select a contiguous representable text range and choose **Comment**, or use **Add document
    comment**.
-2. Write the comment. `Ctrl+Enter` submits it and `Escape` cancels.
+2. Write the comment. `Cmd+Enter` or `Ctrl+Enter` submits it and `Escape` cancels.
 3. Use a thread to reply, edit a human message, resolve or reopen feedback, or delete a thread that
    has no replies.
 
@@ -207,81 +284,73 @@ When you ask a coding agent to address feedback, the intended grammar is:
 The sidecar is the complete agent integration surface. There is no mdReview comment API, MCP server,
 automatic comment delivery, or automatic model invocation.
 
-## Optional Agent Skill
+## Manage the Agent Skill
 
-mdReview includes an optional instruction-only Agent Skill containing the workflow above. The
-application works without it.
+The Agent Skill contains the review workflow above.
 
-Interactive setup detects installed Codex, Claude Code, and Gemini CLI hosts, then asks about each
-detected target before making changes:
+Run interactive setup again to install a missing skill or replace an installed skill:
 
 ```bash
 mdreview setup
 ```
 
-For non-interactive management, select every target explicitly:
+For direct management, select every target explicitly:
 
 ```bash
 mdreview skill status
 mdreview skill install --target codex
-mdreview skill install --target claude --target gemini
-mdreview skill uninstall --target codex --target claude --target gemini
+mdreview skill install --target claude
+mdreview skill install --target pi
+mdreview skill uninstall --target codex --target claude --target pi
 ```
 
-Valid targets are `codex`, `claude`, and `gemini`. Direct installation and uninstallation never
-infer targets. `--force` is accepted only by `skill install`; it moves a conflicting target to a
-recoverable sibling backup before installing, rather than deleting the conflict.
-
-The canonical skill and ownership record live under:
-
-```text
-${XDG_DATA_HOME:-$HOME/.local/share}/mdreview/
-```
+Valid targets are `codex`, `claude`, and `pi`. Installation is global to the current user, not local
+to the current repository. An explicit install command authorises replacement of that target's
+`SKILL.md`. Interactive setup uses the selected agents.
 
 The installed host entries are:
 
-| Target      | Entry                                             |
-| ----------- | ------------------------------------------------- |
-| Codex       | `$HOME/.agents/skills/mdreview` directory symlink |
-| Claude Code | `$HOME/.claude/skills/mdreview` managed copy      |
-| Gemini CLI  | `$HOME/.gemini/skills/mdreview` directory symlink |
+| Target      | Global user file                                   |
+| ----------- | -------------------------------------------------- |
+| Codex       | `$HOME/.codex/skills/mdreview/SKILL.md`            |
+| Claude Code | `$HOME/.claude/skills/mdreview/SKILL.md`           |
+| Pi          | `$HOME/.pi/agent/skills/mdreview/SKILL.md`         |
 
-Gemini CLI may also discover the Codex `.agents/skills` entry. Declining the Gemini target means
-mdReview does not write under `.gemini`; it does not make a Codex-selected skill invisible to
-Gemini.
+Each target has a separate file. Status reports installed or not installed. Uninstall removes
+`SKILL.md`, then removes the `mdreview` directory only when it is empty; unrelated files are
+preserved. Symlinked or malformed target layouts are refused. There is no canonical copy, link,
+hash, ownership record, backup, `--force`, lock, or recovery state.
 
-Before uninstalling or repairing an installation, use `mdreview skill status`. Uninstall removes
-only an unchanged mdReview-owned target and restores its recorded backup when one exists. Modified,
-broken, ambiguous, and unowned entries are preserved for manual inspection. The canonical copy is
-removed only after the final managed target is safely removed and the canonical content remains
-unchanged.
-
-No Codex, Claude Code, or Gemini CLI version is currently documented as automatically stopping
-mdReview at agent-session exit. The skill instructs the user to start an ordinary foreground
-instance.
+The skill describes mdReview as an ordinary foreground child process. The terminal or agent host
+that launches it owns and stops it.
 
 ## Security and privacy
 
 mdReview is a local tool, not a sandbox or remote collaboration server. It serves a normal loopback
 URL with no access token.
 
-Workspace access is descriptor-relative and rejects symlinked workspace files and directories.
-Browser writes are limited to the sidecar derived from an indexed Markdown document; mdReview never
-writes Markdown or a client-supplied arbitrary path. Markdown, sidecars, image files, browser
-requests, and ignore files are still treated as untrusted input.
+Workspace access uses one portable Go path implementation on Linux and macOS. It rejects traversal,
+symlinked paths, special files, and oversized reads. Browser writes are limited to the sidecar
+derived from an indexed Markdown document; mdReview never writes Markdown or a client-supplied
+arbitrary path. Markdown, sidecars, image files, browser requests, and ignore files are untrusted.
+
+The workspace root is an application boundary under an ordinarily stable local namespace, not a
+kernel capability sandbox. mdReview does not defend against another process running as the same user
+that deliberately replaces a checked path component before access; that process can already read
+and modify the repository.
 
 Exact loopback binding and `Host` validation prevent remote and DNS-rebinding access. Browser writes
 additionally require the exact same origin and JSON. Any local process or user able to connect to
 the loopback port can read the API, and local software can forge browser headers, so all users and
-processes on the machine are inside v0.1's network trust boundary. Do not expose mdReview through a
+processes on the machine are inside mdReview's network trust boundary. Do not expose mdReview through a
 reverse proxy or use it on an untrusted shared machine.
 
 Browser sidecar mutations are semantic, bounded, and atomic. A direct external writer, including an
 agent, does not share mdReview's final transaction. An external replacement can still race between
 mdReview's last revision check and its rename, so simultaneous browser/agent editing is not lossless
-or race-free. Finish reviewing before asking an agent to edit, then reload and verify the result. If
-directory sync fails after a rename, mdReview reports that the change was applied but crash
-durability is uncertain.
+or race-free. Finish reviewing before asking an agent to edit, then reload and verify the result.
+mdReview syncs and closes a complete temporary sibling before atomic rename, but does not promise
+survival across sudden power loss or operating-system failure.
 
 The release embeds its browser assets and makes no telemetry, analytics, remote-font, or
 remote-content requests during ordinary use. Installing source dependencies and following a
@@ -290,7 +359,7 @@ boundary and reporting process.
 
 ## Limits
 
-| Input or resource                                |                    v0.1 limit |
+| Input or resource                                |                  current limit |
 | ------------------------------------------------ | ----------------------------: |
 | Markdown document                                |                         8 MiB |
 | Review sidecar                                   |                         8 MiB |
@@ -301,7 +370,7 @@ boundary and reporting process.
 | New text-anchor source                           |                   1 MiB UTF-8 |
 | One `.gitignore` file                            |                         1 MiB |
 
-Relative PNG, JPEG, GIF, and WebP images are loaded through the contained asset path. Active SVG and
+Relative PNG, JPEG, GIF, and WebP images are loaded through the validated asset path. Active SVG and
 unsupported image types are rejected. The encoded image budget does not claim to bound
 browser-internal decoded image memory.
 
@@ -310,8 +379,8 @@ browser-internal decoded image memory.
 - **No browser opened:** this is expected. Copy the complete printed URL into your browser.
 - **Port 4242 was not used:** another process owns it, so mdReview selected and printed an available
   port. An explicit `--port` never falls back.
-- **The command printed an existing URL:** the same Unix user already has a healthy mdReview
-  instance for that canonical directory. Use that URL.
+- **Another instance is already running:** this is allowed. Each invocation prints its own URL and
+  must be stopped separately.
 - **No documents appear:** only `.md` files are discovered. Check the served directory and
   applicable `.gitignore` rules.
 - **A file is listed but will not open:** invalid UTF-8 and Markdown over 8 MiB are visible but
@@ -321,19 +390,19 @@ browser-internal decoded image memory.
 - **A thread is detached:** its original exact source is now missing or occurs more than once. This
   is honest review history, not data loss.
 - **A document changed while composing:** finish or discard the draft to load the current file.
-- **`mdreview setup` refuses to run:** interactive setup needs terminal input. Use direct
-  `skill install` with explicit targets for scripted operation.
-- **Skill status reports a conflict or modification:** inspect and back up the entry. `--force`
-  preserves a conflicting target as a backup but never overwrites a modified canonical skill.
-- **The process should stop:** return to its terminal and press `Ctrl+C`. v0.1 intentionally has no
+- **`mdreview setup` requires an interactive terminal:** run setup in a terminal. Use direct
+  `skill install` commands with explicit targets in a script.
+- **Skill installation reports an unsafe layout:** replace the symlinked or malformed target
+  directory yourself, then retry.
+- **The process should stop:** return to its terminal and press `Ctrl+C`. mdReview intentionally has no
   daemon or remote stop command.
 
 ## Uninstall
 
-First remove any unchanged managed Agent Skill entries:
+First remove any global Agent Skill entries you installed:
 
 ```bash
-mdreview skill uninstall --target codex --target claude --target gemini
+mdreview skill uninstall --target codex --target claude --target pi
 mdreview skill status
 ```
 

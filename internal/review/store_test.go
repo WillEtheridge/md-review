@@ -176,8 +176,7 @@ func TestStoreCreatesTextAndDocumentThreads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if textResult.Durability != DurabilityDurable ||
-		textResult.DocumentRevision != Revision([]byte("# mdReview\n")) ||
+	if textResult.DocumentRevision != Revision([]byte("# mdReview\n")) ||
 		textResult.Thread.ID != "thread_0000000000000000000001" ||
 		textResult.Thread.Status != StatusOpen ||
 		textResult.Thread.Attachment.State != AttachmentAttached {
@@ -434,15 +433,15 @@ func TestStoreDoesNotSerializeDifferentSidecars(t *testing.T) {
 			relativePath string,
 			options filesystem.MutationOptions,
 			callback filesystem.MutationCallback,
-		) ([]byte, filesystem.Durability, error) {
+		) ([]byte, error) {
 			entered <- relativePath
 			select {
 			case <-release:
 			case <-ctx.Done():
-				return nil, filesystem.DurabilityUnknown, ctx.Err()
+				return nil, ctx.Err()
 			}
 			updated, err := callback(nil, false)
-			return updated, filesystem.DurabilityDurable, err
+			return updated, err
 		},
 	}
 	store := deterministicStoreWithGateway(t, fake)
@@ -565,35 +564,6 @@ func TestStorePreservesExternalUnknownValuesDuringCreation(t *testing.T) {
 	)
 }
 
-func TestStoreSurfacesAppliedUncertainDurability(t *testing.T) {
-	markdown := []byte("# title\n")
-	fake := &fakeGateway{
-		files: map[string][]byte{"README.md": markdown},
-		mutate: func(
-			ctx context.Context,
-			relativePath string,
-			options filesystem.MutationOptions,
-			callback filesystem.MutationCallback,
-		) ([]byte, filesystem.Durability, error) {
-			updated, err := callback(nil, false)
-			return updated, filesystem.DurabilityUncertain, err
-		},
-	}
-	store := deterministicStoreWithGateway(t, fake)
-	result, err := store.CreateThread(context.Background(), CreateThreadInput{
-		DocumentPath:             "README.md",
-		ExpectedDocumentRevision: Revision(markdown),
-		Anchor:                   Anchor{Type: AnchorDocument},
-		MessageBody:              "Comment.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Durability != DurabilityUncertain {
-		t.Fatalf("durability = %q, want uncertain", result.Durability)
-	}
-}
-
 func TestStoreTranslatesFilesystemMutationOutcomes(t *testing.T) {
 	markdown := []byte("# title\n")
 	validSidecarBytes := []byte(`{"schemaVersion":1,"threads":[]}`)
@@ -620,8 +590,8 @@ func TestStoreTranslatesFilesystemMutationOutcomes(t *testing.T) {
 					string,
 					filesystem.MutationOptions,
 					filesystem.MutationCallback,
-				) ([]byte, filesystem.Durability, error) {
-					return nil, filesystem.DurabilityUnknown, test.mutateErr
+				) ([]byte, error) {
+					return nil, test.mutateErr
 				},
 			}
 			store := deterministicStoreWithGateway(t, fake)
@@ -766,7 +736,7 @@ type fakeGateway struct {
 		relativePath string,
 		options filesystem.MutationOptions,
 		callback filesystem.MutationCallback,
-	) ([]byte, filesystem.Durability, error)
+	) ([]byte, error)
 }
 
 func (fake *fakeGateway) ReadFile(relativePath string, maxBytes int64) ([]byte, error) {
@@ -787,7 +757,7 @@ func (fake *fakeGateway) MutateFile(
 	relativePath string,
 	options filesystem.MutationOptions,
 	callback filesystem.MutationCallback,
-) ([]byte, filesystem.Durability, error) {
+) ([]byte, error) {
 	if fake.mutate != nil {
 		return fake.mutate(ctx, relativePath, options, callback)
 	}
@@ -797,12 +767,12 @@ func (fake *fakeGateway) MutateFile(
 	fake.mu.Unlock()
 	updated, err := callback(cloneBytes(current), exists)
 	if err != nil {
-		return nil, filesystem.DurabilityUnknown, err
+		return nil, err
 	}
 	fake.mu.Lock()
 	fake.files[relativePath] = cloneBytes(updated)
 	fake.mu.Unlock()
-	return updated, filesystem.DurabilityDurable, nil
+	return updated, nil
 }
 
 func deterministicStore(t *testing.T, gateway *filesystem.FS) *Store {
@@ -837,7 +807,7 @@ func deterministicStoreOptions() StoreOptions {
 
 func openFilesystem(t *testing.T, root string) *filesystem.FS {
 	t.Helper()
-	gateway, err := filesystem.Open(root, filesystem.Auto)
+	gateway, err := filesystem.Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}

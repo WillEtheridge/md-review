@@ -23,18 +23,6 @@ const (
 	messageIDPrefix = "message_"
 )
 
-// ResultDurability reports whether an applied sidecar rename is known to be
-// crash-durable.
-type ResultDurability string
-
-const (
-	// DurabilityDurable means both the temporary file and containing directory synced.
-	DurabilityDurable ResultDurability = "durable"
-
-	// DurabilityUncertain means the rename applied but containing-directory sync failed.
-	DurabilityUncertain ResultDurability = "uncertain"
-)
-
 // Snapshot is one review sidecar with attachment state calculated against the
 // current Markdown bytes.
 type Snapshot struct {
@@ -104,7 +92,6 @@ type CreateThreadInput struct {
 type CreateThreadResult struct {
 	DocumentRevision string             `json:"documentRevision"`
 	ReviewRevision   string             `json:"reviewRevision"`
-	Durability       ResultDurability   `json:"durability"`
 	Thread           ResolvedThread     `json:"thread"`
 	Targets          TargetFingerprints `json:"targets"`
 }
@@ -152,17 +139,15 @@ type DeleteThreadInput struct {
 type MutationResult struct {
 	DocumentRevision string             `json:"documentRevision"`
 	ReviewRevision   string             `json:"reviewRevision"`
-	Durability       ResultDurability   `json:"durability"`
 	Thread           ResolvedThread     `json:"thread"`
 	Targets          TargetFingerprints `json:"targets"`
 }
 
 // DeleteThreadResult describes an applied unreplied-thread deletion.
 type DeleteThreadResult struct {
-	DocumentRevision string           `json:"documentRevision"`
-	ReviewRevision   string           `json:"reviewRevision"`
-	Durability       ResultDurability `json:"durability"`
-	DeletedThreadID  string           `json:"deletedThreadId"`
+	DocumentRevision string `json:"documentRevision"`
+	ReviewRevision   string `json:"reviewRevision"`
+	DeletedThreadID  string `json:"deletedThreadId"`
 }
 
 // StoreOptions provides deterministic clocks and IDs to tests. Production
@@ -196,7 +181,7 @@ type gateway interface {
 		relativePath string,
 		options filesystem.MutationOptions,
 		callback filesystem.MutationCallback,
-	) ([]byte, filesystem.Durability, error)
+	) ([]byte, error)
 }
 
 // Store performs semantic sidecar reads and mutations through a contained
@@ -339,7 +324,7 @@ func (store *Store) CreateThread(
 		currentMarkdown         []byte
 		createdThread           Thread
 	)
-	updated, filesystemDurability, err := store.filesystem.MutateFile(
+	updated, err := store.filesystem.MutateFile(
 		ctx,
 		sidecarPath,
 		filesystem.MutationOptions{
@@ -413,10 +398,6 @@ func (store *Store) CreateThread(
 		)
 	}
 
-	durability, err := resultDurability(filesystemDurability)
-	if err != nil {
-		return CreateThreadResult{}, err
-	}
 	emitted, err := Decode(updated)
 	if err != nil {
 		return CreateThreadResult{}, fmt.Errorf("%w: decode emitted sidecar: %v", ErrUnavailable, err)
@@ -428,7 +409,6 @@ func (store *Store) CreateThread(
 	return CreateThreadResult{
 		DocumentRevision: currentDocumentRevision,
 		ReviewRevision:   Revision(updated),
-		Durability:       durability,
 		Thread: ResolvedThread{
 			ID:         createdThread.ID,
 			Anchor:     cloneAnchor(createdThread.Anchor),
@@ -644,17 +624,4 @@ func randomID(prefix string) (string, error) {
 		return "", err
 	}
 	return prefix + base64.RawURLEncoding.EncodeToString(random), nil
-}
-
-func resultDurability(input filesystem.Durability) (ResultDurability, error) {
-	switch input {
-	case filesystem.DurabilityDurable:
-		return DurabilityDurable, nil
-	case filesystem.DurabilityUncertain:
-		// The rename already applied. Returning this distinct success prevents a
-		// caller from blindly retrying and creating the thread twice.
-		return DurabilityUncertain, nil
-	default:
-		return "", fmt.Errorf("%w: mutation returned unknown durability", ErrUnavailable)
-	}
 }

@@ -718,7 +718,7 @@ func TestStoreConcurrentUnrelatedTargetsMergeAndSameTargetConflicts(t *testing.T
 	})
 }
 
-func TestStoreM3SurfacesUncertainDurabilityAndMutationContention(t *testing.T) {
+func TestStoreM3SurfacesMutationContention(t *testing.T) {
 	markdown := []byte("# title\n")
 	sidecar := []byte(m3Sidecar(m3Thread(
 		"thread_existing",
@@ -739,32 +739,6 @@ func TestStoreM3SurfacesUncertainDurabilityAndMutationContention(t *testing.T) {
 		Status:                   StatusResolved,
 	}
 
-	t.Run("applied but uncertain", func(t *testing.T) {
-		fake := &fakeGateway{
-			files: map[string][]byte{
-				"README.md":             markdown,
-				"README.md.review.json": sidecar,
-			},
-			mutate: func(
-				ctx context.Context,
-				relativePath string,
-				options filesystem.MutationOptions,
-				callback filesystem.MutationCallback,
-			) ([]byte, filesystem.Durability, error) {
-				updated, err := callback(sidecar, true)
-				return updated, filesystem.DurabilityUncertain, err
-			},
-		}
-		result, err := deterministicStoreWithGateway(t, fake).
-			ChangeStatus(context.Background(), input)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.Durability != DurabilityUncertain {
-			t.Fatalf("durability = %q, want uncertain", result.Durability)
-		}
-	})
-
 	t.Run("bounded contention", func(t *testing.T) {
 		fake := &fakeGateway{
 			files: map[string][]byte{
@@ -776,8 +750,8 @@ func TestStoreM3SurfacesUncertainDurabilityAndMutationContention(t *testing.T) {
 				string,
 				filesystem.MutationOptions,
 				filesystem.MutationCallback,
-			) ([]byte, filesystem.Durability, error) {
-				return nil, filesystem.DurabilityUnknown, filesystem.ErrMutationConflict
+			) ([]byte, error) {
+				return nil, filesystem.ErrMutationConflict
 			},
 		}
 		_, err := deterministicStoreWithGateway(t, fake).
@@ -866,13 +840,13 @@ func TestStoreM3SemanticRetriesUseLatestTargetAndUnrelatedData(t *testing.T) {
 					relativePath string,
 					options filesystem.MutationOptions,
 					callback filesystem.MutationCallback,
-				) ([]byte, filesystem.Durability, error) {
+				) ([]byte, error) {
 					if _, firstErr := callback(initial, true); firstErr != nil {
-						return nil, filesystem.DurabilityUnknown, firstErr
+						return nil, firstErr
 					}
 					updated, secondErr := callback(test.second, true)
 					emitted = cloneBytes(updated)
-					return updated, filesystem.DurabilityDurable, secondErr
+					return updated, secondErr
 				},
 			}
 			result, err := deterministicStoreWithGateway(t, fake).
@@ -916,8 +890,7 @@ func TestPublishedM3ContractFixturesDecodeIntoReviewCoreTypes(t *testing.T) {
 
 	var deletion DeleteThreadResult
 	decodeFixture(t, filepath.Join(fixtureRoot, "delete-response.json"), &deletion)
-	if deletion.DeletedThreadID != "thread_existing" ||
-		deletion.Durability != DurabilityDurable {
+	if deletion.DeletedThreadID != "thread_existing" {
 		t.Fatalf("M3 delete fixture = %+v", deletion)
 	}
 }

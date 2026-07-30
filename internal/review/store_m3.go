@@ -28,7 +28,6 @@ type targetMutation struct {
 type targetMutationOutcome struct {
 	documentRevision string
 	reviewRevision   string
-	durability       ResultDurability
 	thread           ResolvedThread
 	targets          TargetFingerprints
 }
@@ -194,7 +193,6 @@ func (store *Store) DeleteThread(
 	return DeleteThreadResult{
 		DocumentRevision: outcome.documentRevision,
 		ReviewRevision:   outcome.reviewRevision,
-		Durability:       outcome.durability,
 		DeletedThreadID:  input.ThreadID,
 	}, nil
 }
@@ -216,7 +214,7 @@ func (store *Store) mutateTarget(
 		currentMarkdown         []byte
 		affectedThreadID        string
 	)
-	updated, filesystemDurability, err := store.filesystem.MutateFile(
+	updated, err := store.filesystem.MutateFile(
 		ctx,
 		sidecarPath,
 		filesystem.MutationOptions{
@@ -282,14 +280,9 @@ func (store *Store) mutateTarget(
 		)
 	}
 
-	durability, err := resultDurability(filesystemDurability)
-	if err != nil {
-		return targetMutationOutcome{}, err
-	}
 	outcome := targetMutationOutcome{
 		documentRevision: currentDocumentRevision,
 		reviewRevision:   Revision(updated),
-		durability:       durability,
 	}
 	if affectedThreadID == "" {
 		return outcome, nil
@@ -352,7 +345,6 @@ func (outcome targetMutationOutcome) mutationResult() MutationResult {
 	return MutationResult{
 		DocumentRevision: outcome.documentRevision,
 		ReviewRevision:   outcome.reviewRevision,
-		Durability:       outcome.durability,
 		Thread:           outcome.thread,
 		Targets:          outcome.targets,
 	}

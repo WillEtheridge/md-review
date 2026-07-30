@@ -1,7 +1,7 @@
 # Security policy
 
 mdReview reads and writes repository data from a local browser interface. This
-document describes the v0.1 security boundary, known limitations, and private
+document describes the current security boundary, known limitations, and private
 reporting process.
 
 ## Supported release
@@ -11,6 +11,10 @@ release. A candidate is not a supported release until its published release
 record includes a passing Gate E decision tied to its source and artifact
 hashes.
 
+Apple Silicon macOS builds remain previews until the exact downloaded artifact
+passes the documented physical-Mac check. Windows and Intel macOS are not
+supported.
+
 ## Report a vulnerability privately
 
 Do not open a public issue, discussion, pull request, or review comment with
@@ -18,7 +22,7 @@ vulnerability details.
 
 Use this repository host's private security-reporting or private security
 advisory feature when it is available. Include the affected release checksum,
-Linux environment, reproduction steps, expected and observed behaviour, and
+operating-system environment, reproduction steps, expected and observed behaviour, and
 the minimum files needed to demonstrate the issue. Remove private Markdown,
 sidecars, user names, and absolute paths unless they are
 essential to the report.
@@ -28,11 +32,11 @@ publish the details. Use a private maintainer contact exposed by that host or
 the published release metadata. This repository does not invent or embed an
 unverified security email address.
 
-## v0.1 trust boundary
+## Trust boundary
 
-mdReview is a foreground, loopback-only Linux application intended for
-single-user machines. It is not a sandbox, remote service, or multi-user
-collaboration system.
+mdReview is a foreground, loopback-only Linux and Apple Silicon macOS
+application intended for single-user machines. It is not a sandbox, remote
+service, or multi-user collaboration system.
 
 - The server binds to `127.0.0.1`.
 - Browser mutations additionally require the exact allowed origin and a JSON
@@ -48,17 +52,22 @@ Loopback binding and exact `Host` validation prevent remote and DNS-rebinding
 access. Exact mutation `Origin` checks and JSON-only bodies prevent ordinary
 cross-origin browser writes. The API has no access token: any local process or
 user able to connect to the port can read it, and local software can forge
-browser headers. Treat all users and processes on the machine as inside v0.1's
+browser headers. Treat all users and processes on the machine as inside mdReview's
 network trust boundary. Do not publish mdReview through a reverse proxy, port
 forward, container ingress, or remote host.
 
 ## Filesystem and write boundary
 
-Workspace operations begin at an open canonical-root descriptor. Linux
-`openat2` containment or the forced descriptor-walk fallback prevents higher
-layers from substituting a path check followed by an ordinary path open.
-Symlinked workspace files and directories are rejected, and special files are
-not treated as Markdown, sidecars, images, or ignore files.
+Workspace operations begin at a canonical absolute root and use one portable
+Go path implementation. Traversal, absolute client paths, symlinked workspace
+files and directories, and special files are rejected. Reads are bounded and
+paths are rechecked immediately before access.
+
+This is an application boundary under an ordinarily stable local namespace,
+not a kernel capability sandbox. A process running as the same user can race a
+check by replacing a path component before the subsequent ordinary path-based
+access. That actor is inside the trust model because it can already read,
+replace, and execute repository files.
 
 The browser API writes only the adjacent sidecar derived from a Markdown
 document in the current index. A client cannot provide an arbitrary
@@ -88,10 +97,10 @@ mutations, ask the agent to edit the Markdown and sidecars, then reload and
 verify before resolving threads. Atomic rename prevents partial JSON; it does
 not make simultaneous external edits transactional.
 
-If the sidecar file sync fails, the destination remains untouched. If
-directory sync fails after rename, mdReview reports that the mutation was
-applied but its crash durability is uncertain. Repeating that semantic action
-blindly could duplicate it.
+If writing, syncing, or closing the temporary sidecar fails, the destination
+remains untouched. A successful atomic rename prevents partial JSON during
+ordinary operation. mdReview does not sync the containing directory or promise
+survival across sudden power loss or operating-system failure.
 
 ## Agent and lifecycle boundaries
 
@@ -102,20 +111,18 @@ agent-facing comment API.
 An agent may append a reply and set a successfully addressed `open` thread to
 `handled`. Only the human reviewer marks a thread `resolved`.
 
-Ordinary instances remain foreground terminal processes and stop with
-`Ctrl+C`. The optional skill does not claim automatic agent-session exit for
-Codex, Claude Code, or Gemini CLI without a passing integration test for an
-exact host version. The current documented host-support matrix makes no such
-claim.
+Every instance is an independent foreground process. The terminal or agent
+host that launches it owns and stops it; mdReview does not infer agent sessions,
+inspect terminal topology, or register parent-death behaviour.
 
 ## Out of scope
 
-v0.1 is not designed or certified for:
+mdReview is not designed or certified for:
 
 - remote hosting, reverse proxies, or internet exposure;
 - several Unix users sharing one writable worktree;
 - accounts, permissions, or real-time collaboration;
-- macOS, Windows, mobile, or responsive layouts;
+- Windows, Intel macOS, mobile, or responsive layouts;
 - daemon, tray, or unattended service operation;
 - active SVG, MDX, Mermaid, mathematics, or renderer plugins;
 - browser-side Markdown editing;

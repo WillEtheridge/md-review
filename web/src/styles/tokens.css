@@ -140,7 +140,6 @@
   --color-active: #8b4936;
   --color-draft: #276cae;
   --color-conflict: #a3473d;
-  --color-uncertain: #8b651f;
   --syntax-keyword: #8c3f55;
   --syntax-string: #4e6c36;
   --syntax-number: #895c1f;
@@ -185,7 +184,6 @@
   --color-active: #efaa91;
   --color-draft: #9bc8ff;
   --color-conflict: #f0a39a;
-  --color-uncertain: #e6c173;
   --syntax-keyword: #efa0b5;
   --syntax-string: #aed08d;
   --syntax-number: #e5bb76;
@@ -226,7 +224,6 @@
     --color-active: #efaa91;
     --color-draft: #9bc8ff;
     --color-conflict: #f0a39a;
-    --color-uncertain: #e6c173;
     --syntax-keyword: #efa0b5;
     --syntax-string: #aed08d;
     --syntax-number: #e5bb76;

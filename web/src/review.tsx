@@ -487,7 +487,7 @@ function OperationComposer({
             onCancel();
           } else if (
             event.key === "Enter" &&
-            event.ctrlKey &&
+            (event.ctrlKey || event.metaKey) &&
             !empty &&
             !tooLarge &&
             !editor.submitting &&
@@ -524,7 +524,7 @@ function OperationComposer({
           Cancel
         </button>
       </div>
-      <p class="keyboard-hint">Ctrl+Enter to save · Esc to cancel</p>
+      <p class="keyboard-hint">Cmd/Ctrl+Enter to save · Esc to cancel</p>
     </form>
   );
 }
@@ -885,7 +885,7 @@ function Composer({
             onCancel();
           } else if (
             event.key === "Enter" &&
-            event.ctrlKey &&
+            (event.ctrlKey || event.metaKey) &&
             !empty &&
             !tooLarge &&
             !composer.submitting &&
@@ -925,7 +925,7 @@ function Composer({
           Cancel
         </button>
       </div>
-      <p class="keyboard-hint">Ctrl+Enter to save · Esc to cancel</p>
+      <p class="keyboard-hint">Cmd/Ctrl+Enter to save · Esc to cancel</p>
     </form>
   );
 }
@@ -935,7 +935,6 @@ export function ReviewPanel({
   review,
   composer,
   activeThreadId,
-  durabilityNotice,
   documentChangeNotice,
   onActiveThread,
   onStartDocumentComment,
@@ -949,7 +948,6 @@ export function ReviewPanel({
   review: ReviewLoad | null;
   composer: ReviewComposer | null;
   activeThreadId: string | null;
-  durabilityNotice: string | null;
   documentChangeNotice: string | null;
   onActiveThread: (threadId: string) => void;
   onStartDocumentComment: () => void;
@@ -1169,11 +1167,6 @@ export function ReviewPanel({
           </button>
         ) : null}
       </header>
-      {durabilityNotice ? (
-        <p class="durability-notice" role="status">
-          {durabilityNotice}
-        </p>
-      ) : null}
       {documentChangeNotice ? (
         <p class="composer-error" role="status">
           {documentChangeNotice}
