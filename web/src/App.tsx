@@ -84,6 +84,15 @@ interface AttemptedMetadata {
   reviewMetadataRevision: string | null;
 }
 
+interface ReviewSession {
+  workspace: WorkspaceView;
+  document: DocumentView;
+  currentPath: string | null;
+  composer: ReviewComposer | null;
+  operationEditorActive: boolean;
+  pendingDocumentChange: PendingDocumentChange | null;
+}
+
 const DOCUMENT_CHANGED_NOTICE =
   "Document changed on disk. Finish or discard your comment to reload.";
 
@@ -410,20 +419,28 @@ function requiredMetadata(documentNode: DocumentNode): {
 
 export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const api = useMemo(() => new ApiClient(), []);
-  const [workspace, setWorkspace] = useState<WorkspaceView>({ status: "loading" });
-  const [document, setDocument] = useState<DocumentView>({ status: "idle" });
-  const [currentPath, setCurrentPath] = useState<string | null>(null);
+  const [session, setSession] = useState<ReviewSession>({
+    workspace: { status: "loading" },
+    document: { status: "idle" },
+    currentPath: null,
+    composer: null,
+    operationEditorActive: false,
+    pendingDocumentChange: null
+  });
+  const {
+    workspace,
+    document,
+    currentPath,
+    composer,
+    operationEditorActive,
+    pendingDocumentChange
+  } = session;
   const [filter, setFilter] = useState("");
   const [expandedDirectories, setExpandedDirectories] = useState<ReadonlySet<string>>(
     () => new Set<string>()
   );
   const [retryNumber, setRetryNumber] = useState(0);
   const [pendingFragment, setPendingFragment] = useState<DocumentNavigation | null>(null);
-  const [composer, setComposer] = useState<ReviewComposer | null>(null);
-  const [operationEditorActive, setOperationEditorActive] = useState(false);
-  const [pendingDocumentChange, setPendingDocumentChange] = useState<PendingDocumentChange | null>(
-    null
-  );
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [themeMode, setThemeMode] = useState<ThemeMode>(initialTheme);
@@ -433,47 +450,46 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const pollCoordinatorRef = useRef<PollCoordinator | null>(null);
   const focusDocumentAfterLoadRef = useRef(false);
   const loadGenerationRef = useRef(0);
-  const workspaceRef = useRef(workspace);
-  const documentStateRef = useRef(document);
-  const currentPathRef = useRef(currentPath);
-  const composerStateRef = useRef(composer);
-  const composerActiveRef = useRef(composer !== null);
-  const operationEditorActiveRef = useRef(operationEditorActive);
-  const pendingDocumentChangeRef = useRef(pendingDocumentChange);
+  const sessionRef = useRef(session);
   const attemptedMetadataRef = useRef<AttemptedMetadata | null>(null);
   const reconcileCycleRef = useRef<(signal: AbortSignal) => Promise<void>>(async () => {});
   const pollErrorRef = useRef<(error: unknown) => "continue" | "stop">(() => "continue");
-  const updateWorkspace = (next: WorkspaceView): void => {
-    workspaceRef.current = next;
-    setWorkspace(next);
+
+  const transformSession = (transform: (current: ReviewSession) => ReviewSession): void => {
+    const next = transform(sessionRef.current);
+    sessionRef.current = next;
+    setSession(next);
   };
 
-  const updateDocument = (next: DocumentView): void => {
-    documentStateRef.current = next;
-    setDocument(next);
+  const updateSessionField = <Key extends keyof ReviewSession>(
+    key: Key,
+    value: ReviewSession[Key]
+  ): void => {
+    transformSession((current) => ({ ...current, [key]: value }));
+  };
+
+  const settleDocument = (next: DocumentView): void => {
+    transformSession((current) => ({
+      ...current,
+      document: next,
+      pendingDocumentChange: null
+    }));
   };
 
   const transformDocument = (transform: (current: DocumentView) => DocumentView): void => {
-    const next = transform(documentStateRef.current);
-    documentStateRef.current = next;
-    setDocument(next);
-  };
-
-  const updateComposer = (next: ReviewComposer | null): void => {
-    composerStateRef.current = next;
-    composerActiveRef.current = next !== null;
-    setComposer(next);
+    transformSession((current) => ({
+      ...current,
+      document: transform(current.document)
+    }));
   };
 
   const transformComposer = (
     transform: (current: ReviewComposer | null) => ReviewComposer | null
   ): void => {
-    updateComposer(transform(composerStateRef.current));
-  };
-
-  const updatePendingDocumentChange = (next: PendingDocumentChange | null): void => {
-    pendingDocumentChangeRef.current = next;
-    setPendingDocumentChange(next);
+    transformSession((current) => ({
+      ...current,
+      composer: transform(current.composer)
+    }));
   };
 
   const expandDocumentAncestors = (path: string): void => {
@@ -502,8 +518,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     });
   };
 
-  const hasDraftGuard = (): boolean =>
-    composerActiveRef.current || operationEditorActiveRef.current;
+  const hasDraftGuard = (): boolean => {
+    const current = sessionRef.current;
+    return current.composer !== null || current.operationEditorActive;
+  };
 
   const rememberAttemptedMetadata = (
     path: string,
@@ -531,12 +549,12 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     if (
       signal.aborted ||
       generation !== loadGenerationRef.current ||
-      currentPathRef.current !== path
+      sessionRef.current.currentPath !== path
     ) {
       return;
     }
     const metadata = requiredMetadata(indexedDocument);
-    updateDocument({
+    settleDocument({
       status: "ready",
       path,
       revision: loadedDocument.revision,
@@ -546,7 +564,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       review: loadedReview
     });
     rememberAttemptedMetadata(path, indexedDocument);
-    updatePendingDocumentChange(null);
   };
 
   const loadCoordinatedDocument = async (
@@ -558,15 +575,14 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   ): Promise<void> => {
     if (indexedDocument.availability === "tooLarge") {
       rememberAttemptedMetadata(path, indexedDocument);
-      if (generation === loadGenerationRef.current && currentPathRef.current === path) {
-        updateDocument({ status: "tooLarge", path });
-        updatePendingDocumentChange(null);
+      if (generation === loadGenerationRef.current && sessionRef.current.currentPath === path) {
+        settleDocument({ status: "tooLarge", path });
       }
       return;
     }
     const attemptedMetadata = rememberAttemptedMetadata(path, indexedDocument);
     if (showLoading) {
-      updateDocument({ status: "loading", path });
+      updateSessionField("document", { status: "loading", path });
     }
     try {
       const result = await loadDocumentAndReview(api, path, signal);
@@ -581,7 +597,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       if (
         (signal.aborted ||
           generation !== loadGenerationRef.current ||
-          currentPathRef.current !== path) &&
+          sessionRef.current.currentPath !== path) &&
         attemptedMetadataRef.current === attemptedMetadata
       ) {
         attemptedMetadataRef.current = null;
@@ -591,18 +607,17 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
         isAbortError(error) ||
         signal.aborted ||
         generation !== loadGenerationRef.current ||
-        currentPathRef.current !== path
+        sessionRef.current.currentPath !== path
       ) {
         if (attemptedMetadataRef.current === attemptedMetadata) {
           attemptedMetadataRef.current = null;
         }
         return;
       }
-      updateDocument({
+      settleDocument({
         path,
         ...documentFailure(error)
       });
-      updatePendingDocumentChange(null);
     }
   };
 
@@ -640,7 +655,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const freezeDocument = (path: string, indexedDocument?: DocumentNode): void => {
-    updatePendingDocumentChange({
+    updateSessionField("pendingDocumentChange", {
       path,
       documentMetadataRevision: indexedDocument?.documentMetadataRevision ?? null
     });
@@ -666,22 +681,21 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           freezeDocument(current.path, indexedDocument);
           return;
         }
-        updateDocument({
+        settleDocument({
           path: current.path,
           ...documentFailure(error)
         });
-        updatePendingDocumentChange(null);
         return;
       }
       const review = reviewFailure(error);
       if (
         signal.aborted ||
         generation !== loadGenerationRef.current ||
-        currentPathRef.current !== current.path
+        sessionRef.current.currentPath !== current.path
       ) {
         return;
       }
-      updateDocument({
+      updateSessionField("document", {
         ...current,
         documentMetadataRevision: metadata.documentRevision,
         reviewMetadataRevision: metadata.reviewRevision,
@@ -707,11 +721,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           freezeDocument(current.path, indexedDocument);
           return;
         }
-        updateDocument({
+        settleDocument({
           path: current.path,
           ...documentFailure(error)
         });
-        updatePendingDocumentChange(null);
         return;
       }
     }
@@ -720,11 +733,11 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     if (
       signal.aborted ||
       generation !== loadGenerationRef.current ||
-      currentPathRef.current !== current.path
+      sessionRef.current.currentPath !== current.path
     ) {
       return;
     }
-    updateDocument({
+    updateSessionField("document", {
       ...current,
       documentMetadataRevision: metadata.documentRevision,
       reviewMetadataRevision: metadata.reviewRevision,
@@ -737,13 +750,13 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     state: ChangedWorkspaceStateResponse,
     signal: AbortSignal
   ): Promise<void> => {
-    const path = currentPathRef.current;
+    const path = sessionRef.current.currentPath;
     if (path === null) {
       return;
     }
     const generation = loadGenerationRef.current;
     const indexedDocument = findDocument(state.navigation, path);
-    const current = documentStateRef.current;
+    const current = sessionRef.current.document;
 
     if (!indexedDocument || indexedDocument.availability === "tooLarge") {
       if (current.status === "ready" && current.path === path && hasDraftGuard()) {
@@ -758,13 +771,12 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       ) {
         return;
       }
-      updatePendingDocumentChange(null);
       if (!indexedDocument) {
         attemptedMetadataRef.current = null;
       } else {
         rememberAttemptedMetadata(path, indexedDocument);
       }
-      updateDocument({
+      settleDocument({
         status: indexedDocument ? "tooLarge" : "removed",
         path
       });
@@ -791,8 +803,8 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     const documentMetadataChanged = current.documentMetadataRevision !== metadata.documentRevision;
     const reviewMetadataChanged = current.reviewMetadataRevision !== metadata.reviewRevision;
     if (!documentMetadataChanged && !reviewMetadataChanged) {
-      if (pendingDocumentChangeRef.current?.path === path) {
-        updatePendingDocumentChange(null);
+      if (sessionRef.current.pendingDocumentChange?.path === path) {
+        updateSessionField("pendingDocumentChange", null);
       }
       return;
     }
@@ -800,8 +812,9 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     if (
       documentMetadataChanged &&
       hasDraftGuard() &&
-      pendingDocumentChangeRef.current?.path === path &&
-      pendingDocumentChangeRef.current.documentMetadataRevision === metadata.documentRevision
+      sessionRef.current.pendingDocumentChange?.path === path &&
+      sessionRef.current.pendingDocumentChange.documentMetadataRevision ===
+        metadata.documentRevision
     ) {
       return;
     }
@@ -819,11 +832,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           freezeDocument(path, indexedDocument);
           return;
         }
-        updateDocument({
+        settleDocument({
           path,
           ...documentFailure(error)
         });
-        updatePendingDocumentChange(null);
         return;
       }
 
@@ -839,15 +851,14 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
       if (
         !signal.aborted &&
         generation === loadGenerationRef.current &&
-        currentPathRef.current === path
+        sessionRef.current.currentPath === path
       ) {
         const metadataOnlyDocument = {
           ...current,
           documentMetadataRevision: metadata.documentRevision
         };
-        updateDocument(metadataOnlyDocument);
+        settleDocument(metadataOnlyDocument);
         rememberAttemptedMetadata(path, indexedDocument);
-        updatePendingDocumentChange(null);
         if (reviewMetadataChanged) {
           await applyReviewRefresh(indexedDocument, metadataOnlyDocument, signal, generation);
         }
@@ -859,7 +870,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const reconcileCycle = async (signal: AbortSignal): Promise<void> => {
-    const previousWorkspace = workspaceRef.current;
+    const previousWorkspace = sessionRef.current.workspace;
     const since =
       previousWorkspace.status === "ready" ? previousWorkspace.state.workspaceRevision : undefined;
     const response = await api.getState(since, signal);
@@ -869,19 +880,23 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
         ...response,
         navigation: orderNavigation(response.navigation)
       };
-      updateWorkspace({ status: "ready", state });
       if (previousWorkspace.status !== "ready") {
         const path = state.initialDocumentPath;
-        currentPathRef.current = path;
-        setCurrentPath(path);
+        transformSession((current) => ({
+          ...current,
+          workspace: { status: "ready", state },
+          document: { status: "idle" },
+          currentPath: path
+        }));
         if (path !== null) {
           expandDocumentAncestors(path);
         }
         attemptedMetadataRef.current = null;
-        updateDocument({ status: "idle" });
         if (path !== null) {
           loadGenerationRef.current += 1;
         }
+      } else {
+        updateSessionField("workspace", { status: "ready", state });
       }
     } else {
       if (
@@ -900,10 +915,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     if (isAbortError(error)) {
       return "continue";
     }
-    if (workspaceRef.current.status === "ready") {
+    if (sessionRef.current.workspace.status === "ready") {
       setPollNotice("Workspace changes could not be checked. mdReview will try again.");
     } else {
-      updateWorkspace({ status: "error", reason: "unavailable" });
+      updateSessionField("workspace", { status: "error", reason: "unavailable" });
     }
     return "continue";
   };
@@ -931,9 +946,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   }, [document]);
 
   useEffect(() => {
-    if (workspaceRef.current.status !== "ready") {
-      updateWorkspace({ status: "loading" });
-    }
     const coordinator = new PollCoordinator({
       clock: browserPollClock(),
       visibility: browserVisibilitySource(globalThis.document),
@@ -1009,19 +1021,23 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     navigationControllerRef.current?.abort();
     const generation = loadGenerationRef.current + 1;
     loadGenerationRef.current = generation;
-    currentPathRef.current = path;
-    setCurrentPath(path);
+    transformSession((current) => ({
+      ...current,
+      currentPath: path,
+      composer: null,
+      operationEditorActive: false,
+      pendingDocumentChange: null
+    }));
     expandDocumentAncestors(path);
     attemptedMetadataRef.current = null;
-    updatePendingDocumentChange(null);
 
-    const currentWorkspace = workspaceRef.current;
+    const currentWorkspace = sessionRef.current.workspace;
     const indexedDocument =
       currentWorkspace.status === "ready"
         ? findDocument(currentWorkspace.state.navigation, path)
         : undefined;
     if (!indexedDocument) {
-      updateDocument({ status: "removed", path });
+      settleDocument({ status: "removed", path });
       return;
     }
 
@@ -1044,9 +1060,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
     mutationControllerRef.current?.abort();
     mutationControllerRef.current = null;
     setPendingFragment(null);
-    updateComposer(null);
-    operationEditorActiveRef.current = false;
-    setOperationEditorActive(false);
     setActiveThreadId(null);
     expectDocumentFocus(path);
     selectAndLoadDocument(path);
@@ -1055,9 +1068,6 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const handleMarkdownNavigate = (destination: DocumentNavigation): void => {
     mutationControllerRef.current?.abort();
     mutationControllerRef.current = null;
-    updateComposer(null);
-    operationEditorActiveRef.current = false;
-    setOperationEditorActive(false);
     setActiveThreadId(null);
     setPendingFragment(destination);
     expectDocumentFocus(destination.path);
@@ -1071,7 +1081,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleStartTextComment = (anchor: TextThreadAnchor): void => {
-    updateComposer({
+    updateSessionField("composer", {
       kind: "text",
       anchor,
       draft: "",
@@ -1082,7 +1092,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   };
 
   const handleStartDocumentComment = (): void => {
-    updateComposer({
+    updateSessionField("composer", {
       kind: "document",
       draft: "",
       submitting: false,
@@ -1094,7 +1104,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
   const handleCancelComposer = (): void => {
     mutationControllerRef.current?.abort();
     mutationControllerRef.current = null;
-    updateComposer(null);
+    updateSessionField("composer", null);
     window.getSelection()?.removeAllRanges();
     pollCoordinatorRef.current?.requestNow();
   };
@@ -1167,7 +1177,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
             }
           };
         });
-        updateComposer(null);
+        updateSessionField("composer", null);
         setActiveThreadId(response.thread.id);
         window.getSelection()?.removeAllRanges();
       })
@@ -1343,6 +1353,7 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
               <button
                 type="button"
                 onClick={() => {
+                  updateSessionField("workspace", { status: "loading" });
                   setRetryNumber((value) => value + 1);
                 }}
               >
@@ -1490,8 +1501,10 @@ export function App({ initialTheme }: { initialTheme: ThemeMode }) {
           onCancel={handleCancelComposer}
           onOperation={handleReviewOperation}
           onEditorActiveChange={(active) => {
-            operationEditorActiveRef.current = active;
-            setOperationEditorActive(active);
+            transformSession((current) => ({
+              ...current,
+              operationEditorActive: active
+            }));
             if (!active) {
               pollCoordinatorRef.current?.requestNow();
             }
