@@ -17,21 +17,26 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
 func openWorkspace(t *testing.T, root string) *workspace.Service {
 	t.Helper()
-	service, err := workspace.Open(root, workspace.Options{})
+	gateway, err := filesystem.Open(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := service.Close(); err != nil {
+		if err := gateway.Close(); err != nil {
 			t.Error(err)
 		}
 	})
+	service, err := workspace.New(gateway, workspace.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	return service
 }
 
@@ -137,19 +142,6 @@ func TestSnapshotReturnsIndependentNavigation(t *testing.T) {
 	}
 	if second.InitialDocumentPath == nil || *second.InitialDocumentPath != "README.md" {
 		t.Fatalf("snapshot initial path was mutated: %v", second.InitialDocumentPath)
-	}
-}
-
-func TestRootReturnsCanonicalWorkspacePath(t *testing.T) {
-	realRoot := t.TempDir()
-	linkParent := t.TempDir()
-	linkRoot := filepath.Join(linkParent, "workspace")
-	if err := os.Symlink(realRoot, linkRoot); err != nil {
-		t.Fatal(err)
-	}
-	service := openWorkspace(t, linkRoot)
-	if service.Root() != realRoot {
-		t.Fatalf("Root() = %q, want canonical %q", service.Root(), realRoot)
 	}
 }
 
@@ -421,17 +413,24 @@ func TestReadDocumentContractsAndChangedEntries(t *testing.T) {
 	}
 }
 
-func TestReadDocumentAfterCloseReportsReadFailure(t *testing.T) {
+func TestReadDocumentAfterGatewayCloseReportsReadFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "document.md"), []byte("source"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	service := openWorkspace(t, root)
-	if err := service.Close(); err != nil {
+	gateway, err := filesystem.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := workspace.New(gateway, workspace.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := gateway.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.ReadDocument(context.Background(), "document.md"); !errors.Is(err, workspace.ErrDocumentRead) {
-		t.Fatalf("ReadDocument after Close error = %v, want ErrDocumentRead", err)
+		t.Fatalf("ReadDocument after gateway close error = %v, want ErrDocumentRead", err)
 	}
 }
 

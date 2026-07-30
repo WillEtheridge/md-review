@@ -9,6 +9,30 @@ import (
 	"testing"
 )
 
+func TestOpenCanonicalisesRootAndRejectsFiles(t *testing.T) {
+	root := t.TempDir()
+	link := filepath.Join(t.TempDir(), "workspace")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := Open(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = gateway.Close() })
+	if gateway.Root() != root {
+		t.Fatalf("Root() = %q, want %q", gateway.Root(), root)
+	}
+
+	file := filepath.Join(t.TempDir(), "README.md")
+	if err := os.WriteFile(file, []byte("# document\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(file); !errors.Is(err, ErrNotDirectory) {
+		t.Fatalf("Open(file) error = %v, want ErrNotDirectory", err)
+	}
+}
+
 func TestPortableFilesystemReadsAndScansRegularFiles(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "docs"), 0o700); err != nil {

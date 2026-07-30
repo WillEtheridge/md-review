@@ -9,24 +9,37 @@ import (
 	"path/filepath"
 	"testing"
 
+	"mdreview.dev/mdreview/internal/filesystem"
 	"mdreview.dev/mdreview/internal/limits"
 )
+
+func openAssetTestWorkspace(t *testing.T, root string) *Service {
+	t.Helper()
+	gateway, err := filesystem.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := gateway.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	service, err := New(gateway, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
 
 func TestReadAssetResolvesFromIndexedDocument(t *testing.T) {
 	root := t.TempDir()
 	writeAssetTestFile(t, root, "docs/guide.md", []byte("# Guide\n"))
 	writeAssetTestFile(t, root, "images/diagram.png", []byte("image"))
 
-	service, err := Open(root, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = service.Close()
-	})
+	service := openAssetTestWorkspace(t, root)
 
 	var content []byte
-	err = service.ReadAsset(
+	err := service.ReadAsset(
 		context.Background(),
 		"docs/guide.md",
 		"../images/diagram.png",
@@ -63,15 +76,7 @@ func TestReadAssetReaderObservesContainedFileGrowthPastLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service, err := Open(root, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := service.Close(); err != nil {
-			t.Error(err)
-		}
-	})
+	service := openAssetTestWorkspace(t, root)
 
 	var exposedBytes int64
 	err = service.ReadAsset(
@@ -127,13 +132,7 @@ func TestReadAssetRejectsUnscopedAndUnsafeReferences(t *testing.T) {
 	if err := os.Symlink("image.png", filepath.Join(root, "docs", "link.png")); err != nil {
 		t.Fatal(err)
 	}
-	service, err := Open(root, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = service.Close()
-	})
+	service := openAssetTestWorkspace(t, root)
 
 	references := []string{
 		"",
@@ -165,7 +164,7 @@ func TestReadAssetRejectsUnscopedAndUnsafeReferences(t *testing.T) {
 		})
 	}
 
-	err = service.ReadAsset(
+	err := service.ReadAsset(
 		context.Background(),
 		"missing.md",
 		"docs/image.png",
@@ -183,16 +182,10 @@ func TestReadAssetPreservesDoubleEncodedLiteral(t *testing.T) {
 	root := t.TempDir()
 	writeAssetTestFile(t, root, "README.md", []byte("# Root\n"))
 	writeAssetTestFile(t, root, "%2e%2e.png", []byte("literal"))
-	service, err := Open(root, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = service.Close()
-	})
+	service := openAssetTestWorkspace(t, root)
 
 	var content []byte
-	err = service.ReadAsset(
+	err := service.ReadAsset(
 		context.Background(),
 		"README.md",
 		"%252e%252e.png",
@@ -214,13 +207,7 @@ func TestReadAssetPropagatesCancellationAndVisitorFailure(t *testing.T) {
 	root := t.TempDir()
 	writeAssetTestFile(t, root, "README.md", []byte("# Root\n"))
 	writeAssetTestFile(t, root, "image.png", []byte("image"))
-	service, err := Open(root, Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = service.Close()
-	})
+	service := openAssetTestWorkspace(t, root)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -231,7 +218,7 @@ func TestReadAssetPropagatesCancellationAndVisitorFailure(t *testing.T) {
 	}
 
 	expected := errors.New("stop stream")
-	err = service.ReadAsset(
+	err := service.ReadAsset(
 		context.Background(),
 		"README.md",
 		"image.png",

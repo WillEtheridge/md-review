@@ -192,9 +192,8 @@ func (mutex contextMutex) unlock() {
 
 const scanFreshness = time.Second
 
-// Service owns the portable gateway and request-refreshed workspace index.
-//
-// Close must be called after request handling has stopped.
+// Service maintains a request-refreshed workspace index through a
+// caller-owned portable filesystem gateway.
 type Service struct {
 	gateway *filesystem.FS
 	now     func() time.Time
@@ -213,19 +212,19 @@ type Service struct {
 	lastScanFailureTime time.Time
 }
 
-// Open canonicalises root, opens its filesystem gateway, and builds revision one.
-func Open(root string, options Options) (*Service, error) {
-	return openWithScanner(root, options, scanWorkspace)
+// New builds revision one through gateway. The caller retains ownership of the
+// gateway and must keep it open while the service is in use.
+func New(gateway *filesystem.FS, options Options) (*Service, error) {
+	return openWithScanner(gateway, options, scanWorkspace)
 }
 
 func openWithScanner(
-	root string,
+	gateway *filesystem.FS,
 	options Options,
 	scan scanFunction,
 ) (*Service, error) {
-	gateway, err := filesystem.Open(root)
-	if err != nil {
-		return nil, err
+	if gateway == nil {
+		return nil, errors.New("workspace requires a filesystem")
 	}
 
 	now := options.Now
@@ -233,12 +232,10 @@ func openWithScanner(
 		now = time.Now
 	}
 	if scan == nil {
-		_ = gateway.Close()
 		return nil, errors.New("workspace scanner is required")
 	}
 	result, err := scan(context.Background(), gateway, nil)
 	if err != nil {
-		_ = gateway.Close()
 		return nil, fmt.Errorf("scan workspace: %w", err)
 	}
 	result.snapshot.Revision = 1
@@ -252,16 +249,6 @@ func openWithScanner(
 		ignoreFiles:        result.ignoreFiles,
 		lastSuccessfulScan: now(),
 	}, nil
-}
-
-// Close prevents future workspace filesystem operations. Repeated calls return nil.
-func (service *Service) Close() error {
-	return service.gateway.Close()
-}
-
-// Root returns the canonical absolute root used for display and instance identity.
-func (service *Service) Root() string {
-	return service.gateway.Root()
 }
 
 // Snapshot returns an independent copy of the current workspace index. A stale

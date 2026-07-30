@@ -63,10 +63,8 @@ type Server struct {
 }
 
 // Workspace is the server's consumer-owned read-only view of an indexed
-// workspace. Operating-system paths never cross this interface except the
-// authenticated health identity returned by Root.
+// workspace. Operating-system paths do not cross this interface.
 type Workspace interface {
-	Root() string
 	Snapshot(context.Context) (workspace.Snapshot, error)
 	ReadDocument(context.Context, string) (workspace.DocumentContent, error)
 	ReadAsset(context.Context, string, string, func(io.Reader, int64) error) error
@@ -89,7 +87,7 @@ func New(config Config) (*Server, error) {
 	if config.Assets == nil {
 		return nil, fmt.Errorf("server assets are required")
 	}
-	if config.Workspace == nil || config.Workspace.Root() == "" {
+	if config.Workspace == nil {
 		return nil, fmt.Errorf("server workspace is required")
 	}
 	if config.Review == nil {

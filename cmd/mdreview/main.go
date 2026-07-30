@@ -12,7 +12,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
@@ -93,10 +92,12 @@ func runServe(
 	options cli.Options,
 	output io.Writer,
 ) (returnErr error) {
-	canonicalRoot, err := canonicalDirectory(options.Directory)
+	gateway, err := filesystem.Open(options.Directory)
 	if err != nil {
-		return err
+		return fmt.Errorf("open workspace filesystem: %w", err)
 	}
+	defer gateway.Close()
+	canonicalRoot := gateway.Root()
 
 	listener, err := listenLoopback(options.Port, options.PortExplicit)
 	if err != nil {
@@ -104,18 +105,12 @@ func runServe(
 	}
 	defer listener.Close()
 
-	indexedWorkspace, err := workspace.Open(canonicalRoot, workspace.Options{})
+	indexedWorkspace, err := workspace.New(gateway, workspace.Options{})
 	if err != nil {
 		return fmt.Errorf("open workspace: %w", err)
 	}
-	defer indexedWorkspace.Close()
 
-	reviewFilesystem, err := filesystem.Open(canonicalRoot)
-	if err != nil {
-		return fmt.Errorf("open review filesystem: %w", err)
-	}
-	defer reviewFilesystem.Close()
-	reviewStore, err := review.NewStore(reviewFilesystem, review.StoreOptions{})
+	reviewStore, err := review.NewStore(gateway, review.StoreOptions{})
 	if err != nil {
 		return fmt.Errorf("open review store: %w", err)
 	}
@@ -174,25 +169,6 @@ func runServe(
 		}
 		return fmt.Errorf("serve HTTP: %w", serveErr)
 	}
-}
-
-func canonicalDirectory(directory string) (string, error) {
-	absolute, err := filepath.Abs(directory)
-	if err != nil {
-		return "", fmt.Errorf("make workspace directory absolute: %w", err)
-	}
-	canonical, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return "", fmt.Errorf("canonicalise workspace directory: %w", err)
-	}
-	info, err := os.Stat(canonical)
-	if err != nil {
-		return "", fmt.Errorf("inspect workspace directory: %w", err)
-	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("workspace path is not a directory")
-	}
-	return canonical, nil
 }
 
 func listenLoopback(port uint16, explicit bool) (net.Listener, error) {

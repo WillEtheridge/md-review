@@ -44,20 +44,47 @@ func openPollingWorkspace(
 	scan scanFunction,
 ) *Service {
 	t.Helper()
+	gateway, err := filesystem.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := gateway.Close(); err != nil {
+			t.Error(err)
+		}
+	})
 	service, err := openWithScanner(
-		root,
+		gateway,
 		Options{Now: clock.Now},
 		scan,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := service.Close(); err != nil {
-			t.Error(err)
-		}
-	})
 	return service
+}
+
+func TestOpenWithScannerLeavesCallerGatewayOpenOnFailure(t *testing.T) {
+	gateway, err := filesystem.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = gateway.Close() })
+
+	want := errors.New("scan failed")
+	_, err = openWithScanner(
+		gateway,
+		Options{},
+		func(context.Context, *filesystem.FS, ignoreFileCache) (scanResult, error) {
+			return scanResult{}, want
+		},
+	)
+	if !errors.Is(err, want) {
+		t.Fatalf("openWithScanner() error = %v, want %v", err, want)
+	}
+	if _, err := gateway.ReadDirectory(""); err != nil {
+		t.Fatalf("caller-owned gateway was closed: %v", err)
+	}
 }
 
 func TestSnapshotFreshnessExactBoundaryAndNoRequestWork(t *testing.T) {

@@ -17,32 +17,6 @@ import (
 	"mdreview.dev/mdreview/internal/cli"
 )
 
-func TestCanonicalDirectoryResolvesRootSymlink(t *testing.T) {
-	root := t.TempDir()
-	link := filepath.Join(t.TempDir(), "workspace")
-	if err := os.Symlink(root, link); err != nil {
-		t.Fatalf("create root symlink: %v", err)
-	}
-
-	got, err := canonicalDirectory(link)
-	if err != nil {
-		t.Fatalf("canonicalDirectory() error = %v", err)
-	}
-	if got != root {
-		t.Fatalf("canonicalDirectory() = %q, want %q", got, root)
-	}
-}
-
-func TestCanonicalDirectoryRejectsFile(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "README.md")
-	if err := os.WriteFile(file, []byte("# document\n"), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-	if _, err := canonicalDirectory(file); err == nil {
-		t.Fatal("canonicalDirectory() error = nil, want a directory error")
-	}
-}
-
 func TestListenLoopbackUsesExplicitPortWithoutFallback(t *testing.T) {
 	var addresses []string
 	wantError := errors.New("occupied")

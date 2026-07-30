@@ -676,10 +676,6 @@ func (fake fakeReviewStore) DeleteThread(
 	return fake.deleteResult, fake.deleteErr
 }
 
-func (fake fakeWorkspace) Root() string {
-	return "/canonical/workspace"
-}
-
 func (fake fakeWorkspace) Snapshot(context.Context) (workspace.Snapshot, error) {
 	return fake.snapshot, fake.snapshotErr
 }
