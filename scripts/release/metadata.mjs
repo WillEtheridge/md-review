@@ -6,7 +6,6 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
-const version = "v0.1.0";
 const created = "2026-07-29T00:00:00Z";
 const noticePattern = /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/iu;
 const releaseEvidenceFiles = [
@@ -72,7 +71,21 @@ function run(command, arguments_, options = {}) {
   return result.stdout;
 }
 
-export function parseGoBuildInfo(output) {
+function parseTarget(value) {
+  if (value !== "linux/amd64" && value !== "darwin/arm64") {
+    fail(`unsupported release target: ${value}`);
+  }
+  const [goos, goarch] = value.split("/");
+  return {
+    value,
+    goos,
+    goarch,
+    name: `${goos}-${goarch}`
+  };
+}
+
+export function parseGoBuildInfo(output, targetValue = "linux/amd64") {
+  const target = parseTarget(targetValue);
   const dependencies = [];
   const buildSettings = new Map();
   for (const line of output.split("\n")) {
@@ -96,12 +109,15 @@ export function parseGoBuildInfo(output) {
   if (dependencies.length === 0) {
     fail("completed binary contains no Go module dependencies");
   }
-  for (const [key, expected] of [
+  const expectedSettings = [
     ["CGO_ENABLED", "0"],
-    ["GOOS", "linux"],
-    ["GOARCH", "amd64"],
-    ["GOAMD64", "v1"]
-  ]) {
+    ["GOOS", target.goos],
+    ["GOARCH", target.goarch]
+  ];
+  if (target.value === "linux/amd64") {
+    expectedSettings.push(["GOAMD64", "v1"]);
+  }
+  for (const [key, expected] of expectedSettings) {
     if (buildSettings.get(key) !== expected) {
       fail(`completed binary build setting ${key} is not ${expected}`);
     }
@@ -229,9 +245,9 @@ export function collectNpmPackages(sourceRoot) {
   return result;
 }
 
-function collectGoModules(sourceRoot, binaryPath) {
+function collectGoModules(sourceRoot, binaryPath, target) {
   const buildInfo = run("go", ["version", "-m", binaryPath], { cwd: sourceRoot });
-  const dependencies = parseGoBuildInfo(buildInfo);
+  const dependencies = parseGoBuildInfo(buildInfo, target.value);
   const policy = asObject(
     readJSON(join(sourceRoot, "scripts/release/go-licenses.json"), "Go licence policy"),
     "Go licence policy"
@@ -347,11 +363,11 @@ function noticeSection(heading, declaredLicense, files) {
   return parts.join("");
 }
 
-function writeNotices(outputPath, goModules, npmPackages, fonts) {
+function writeNotices(outputPath, version, goModules, npmPackages, fonts) {
   const parts = [
     "# mdReview third-party notices\n\n",
     "This deterministic notice file records licence and notice text for code and fonts redistributed ",
-    "in the mdReview v0.1.0 binary. Build-only frontend packages remain recorded in the SPDX SBOM ",
+    `in the mdReview ${version} binary. Build-only frontend packages remain recorded in the SPDX SBOM `,
     "but are not represented here as redistributed runtime content.\n"
   ];
   for (const module of goModules) {
@@ -472,7 +488,16 @@ function fontPackageEntry(font) {
   };
 }
 
-function writeSPDX(outputPath, stagingRoot, binaryHash, goModules, npmPackages, fonts) {
+function writeSPDX(
+  outputPath,
+  stagingRoot,
+  version,
+  target,
+  binaryHash,
+  goModules,
+  npmPackages,
+  fonts
+) {
   const applicationID = "SPDXRef-Package-mdReview";
   const files = releaseEvidenceFiles.map((path) =>
     fileEntry(stagingRoot, path, path === "LICENSE" ? "MIT" : "NOASSERTION")
@@ -560,8 +585,8 @@ function writeSPDX(outputPath, stagingRoot, binaryHash, goModules, npmPackages, 
     spdxVersion: "SPDX-2.3",
     dataLicense: "CC0-1.0",
     SPDXID: "SPDXRef-DOCUMENT",
-    name: "mdreview-v0.1.0-linux-amd64",
-    documentNamespace: `https://mdreview.dev/spdx/v0.1.0/linux-amd64/${binaryHash}`,
+    name: `mdreview-${version}-${target.name}`,
+    documentNamespace: `https://mdreview.dev/spdx/${version}/${target.name}/${binaryHash}`,
     creationInfo: {
       created,
       creators: ["Tool: mdReview deterministic release metadata generator"]
@@ -573,31 +598,41 @@ function writeSPDX(outputPath, stagingRoot, binaryHash, goModules, npmPackages, 
   writeFileSync(outputPath, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o644 });
 }
 
-export function generateMetadata(sourceRootPath, binaryPathValue, outputDirectoryPath) {
+export function generateMetadata(
+  sourceRootPath,
+  binaryPathValue,
+  outputDirectoryPath,
+  targetValue
+) {
   const sourceRoot = resolve(sourceRootPath);
   const binaryPath = resolve(binaryPathValue);
   const outputDirectory = resolve(outputDirectoryPath);
+  const target = parseTarget(targetValue);
+  const version = readFileSync(join(sourceRoot, "internal/version/version.txt"), "utf8").trim();
+  if (!/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
+    fail("product version is invalid");
+  }
   mkdirSync(outputDirectory, { recursive: true });
 
   const binaryData = readFileSync(binaryPath);
   const binaryHash = sha256(binaryData);
-  const { buildInfo, modules: goModules } = collectGoModules(sourceRoot, binaryPath);
+  const { buildInfo, modules: goModules } = collectGoModules(sourceRoot, binaryPath, target);
   const npmPackages = collectNpmPackages(sourceRoot);
   const fonts = collectFonts(sourceRoot);
   const noticePath = join(outputDirectory, "THIRD_PARTY_NOTICES.txt");
   const spdxPath = join(outputDirectory, "mdreview.spdx.json");
 
-  writeNotices(noticePath, goModules, npmPackages, fonts);
-  writeSPDX(spdxPath, outputDirectory, binaryHash, goModules, npmPackages, fonts);
+  writeNotices(noticePath, version, goModules, npmPackages, fonts);
+  writeSPDX(spdxPath, outputDirectory, version, target, binaryHash, goModules, npmPackages, fonts);
   return { binaryHash, buildInfo, noticePath, spdxPath };
 }
 
 function main() {
-  const [, , sourceRoot, binaryPath, outputDirectory] = process.argv;
-  if (outputDirectory === undefined) {
-    fail("usage: metadata.mjs SOURCE_ROOT BINARY OUTPUT_DIRECTORY");
+  const [, , sourceRoot, binaryPath, outputDirectory, target] = process.argv;
+  if (target === undefined) {
+    fail("usage: metadata.mjs SOURCE_ROOT BINARY OUTPUT_DIRECTORY TARGET");
   }
-  const result = generateMetadata(sourceRoot, binaryPath, outputDirectory);
+  const result = generateMetadata(sourceRoot, binaryPath, outputDirectory, target);
   process.stdout.write(result.buildInfo);
 }
 

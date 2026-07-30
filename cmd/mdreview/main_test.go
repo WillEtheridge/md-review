@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"mdreview.dev/mdreview/internal/version"
 )
 
 const (
@@ -21,7 +23,7 @@ func TestRunPrintsVersionWithoutLoadingTheApplication(t *testing.T) {
 	if err := run(context.Background(), []string{"--version"}, nil, &output); err != nil {
 		t.Fatalf("run version: %v", err)
 	}
-	if got, want := output.String(), applicationVersion+"\n"; got != want {
+	if got, want := output.String(), version.Current+"\n"; got != want {
 		t.Fatalf("version output = %q, want %q", got, want)
 	}
 }
@@ -43,7 +45,7 @@ func TestEmbeddedApplicationLoadsBothAssetTrees(t *testing.T) {
 
 func TestBuiltCommandContainsBothEmbeddedAssetTrees(t *testing.T) {
 	binaryPath := filepath.Join(t.TempDir(), "mdreview")
-	build := exec.Command("go", "build", "-trimpath", "-o", binaryPath, ".")
+	build := exec.Command("go", "build", "-buildvcs=false", "-trimpath", "-o", binaryPath, ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build command binary: %v\n%s", err, output)

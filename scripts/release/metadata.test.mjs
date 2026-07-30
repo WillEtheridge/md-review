@@ -6,8 +6,8 @@ import test from "node:test";
 
 import { collectNpmPackages, parseGoBuildInfo } from "./metadata.mjs";
 
-test("Go build information must describe the frozen pure-Go target", () => {
-  const output = [
+test("Go build information must describe the selected pure-Go target", () => {
+  const linuxOutput = [
     "binary: go1.26.5",
     "\tdep\texample.test/module\tv1.2.3\th1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
     "\tbuild\tCGO_ENABLED=0",
@@ -15,7 +15,7 @@ test("Go build information must describe the frozen pure-Go target", () => {
     "\tbuild\tGOARCH=amd64",
     "\tbuild\tGOAMD64=v1"
   ].join("\n");
-  assert.deepEqual(parseGoBuildInfo(output), [
+  assert.deepEqual(parseGoBuildInfo(linuxOutput, "linux/amd64"), [
     {
       path: "example.test/module",
       version: "v1.2.3",
@@ -23,9 +23,20 @@ test("Go build information must describe the frozen pure-Go target", () => {
     }
   ]);
   assert.throws(
-    () => parseGoBuildInfo(output.replace("CGO_ENABLED=0", "CGO_ENABLED=1")),
+    () => parseGoBuildInfo(linuxOutput.replace("CGO_ENABLED=0", "CGO_ENABLED=1")),
     /CGO_ENABLED is not 0/u
   );
+  const darwinOutput = linuxOutput
+    .replace("GOOS=linux", "GOOS=darwin")
+    .replace("GOARCH=amd64", "GOARCH=arm64")
+    .replace("\n\tbuild\tGOAMD64=v1", "");
+  assert.deepEqual(parseGoBuildInfo(darwinOutput, "darwin/arm64"), [
+    {
+      path: "example.test/module",
+      version: "v1.2.3",
+      sum: "h1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  ]);
 });
 
 test("redistributed npm packages require installed licence evidence", async () => {

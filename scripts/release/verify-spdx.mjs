@@ -14,10 +14,23 @@ function object(value, label) {
   return value;
 }
 
-export function verifySPDX(path) {
+export function verifySPDX(path, version, target) {
+  if (
+    !/^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$/u.test(version) ||
+    (target !== "linux-amd64" && target !== "darwin-arm64")
+  ) {
+    fail("SPDX verification requires a supported version and target");
+  }
   const document = object(JSON.parse(readFileSync(path, "utf8")), "SPDX document");
   if (document.spdxVersion !== "SPDX-2.3" || document.dataLicense !== "CC0-1.0") {
     fail("SPDX document does not use the frozen SPDX 2.3 envelope");
+  }
+  if (
+    document.name !== `mdreview-${version}-${target}` ||
+    typeof document.documentNamespace !== "string" ||
+    !document.documentNamespace.startsWith(`https://mdreview.dev/spdx/${version}/${target}/`)
+  ) {
+    fail("SPDX document identity does not match the release");
   }
   if (object(document.creationInfo, "SPDX creation info").created !== "2026-07-29T00:00:00Z") {
     fail("SPDX document creation time differs from the frozen source epoch");
@@ -31,7 +44,7 @@ export function verifySPDX(path) {
   if (
     application === undefined ||
     application.name !== "mdReview" ||
-    application.versionInfo !== "v0.1.0" ||
+    application.versionInfo !== version ||
     application.licenseDeclared !== "MIT" ||
     application.licenseConcluded !== "MIT"
   ) {
@@ -82,11 +95,11 @@ export function verifySPDX(path) {
 }
 
 function main() {
-  const [, , path] = process.argv;
-  if (path === undefined) {
-    fail("usage: verify-spdx.mjs SPDX_PATH");
+  const [, , path, version, target] = process.argv;
+  if (target === undefined) {
+    fail("usage: verify-spdx.mjs SPDX_PATH VERSION TARGET");
   }
-  verifySPDX(path);
+  verifySPDX(path, version, target);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

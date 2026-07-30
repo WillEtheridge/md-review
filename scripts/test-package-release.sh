@@ -8,7 +8,6 @@ PROJECT_DIRECTORY="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 node --test "${SCRIPT_DIRECTORY}/release/"*.test.mjs
 bash -n \
   "${SCRIPT_DIRECTORY}/build-release.sh" \
-  "${SCRIPT_DIRECTORY}/package-macos-preview.sh" \
   "${SCRIPT_DIRECTORY}/package-release.sh" \
   "${SCRIPT_DIRECTORY}/release/verify-binary.sh"
 node --check "${SCRIPT_DIRECTORY}/release/archive.mjs"
@@ -25,6 +24,8 @@ printf '%s\n' \
   '  printf "fixture: go1.26.5\\n\\tbuild\\tCGO_ENABLED=0\\n\\tbuild\\tGOOS=linux\\n\\tbuild\\tGOARCH=amd64\\n\\tbuild\\tGOAMD64=v1\\n"' \
   '  exit 0' \
   'fi' \
+  'if [[ "$1" == "env" && "$2" == "GOOS" ]]; then printf "linux\\n"; exit 0; fi' \
+  'if [[ "$1" == "env" && "$2" == "GOARCH" ]]; then printf "amd64\\n"; exit 0; fi' \
   'exit 1' >"${TEST_DIRECTORY}/tools/go"
 printf '%s\n' \
   '#!/usr/bin/bash' \
@@ -41,6 +42,7 @@ chmod 0755 \
   "${TEST_DIRECTORY}/mdreview"
 PATH="${TEST_DIRECTORY}/tools:${PATH}" \
   "${SCRIPT_DIRECTORY}/release/verify-binary.sh" \
-  "${TEST_DIRECTORY}/mdreview" >/dev/null
+  "${TEST_DIRECTORY}/mdreview" \
+  linux/amd64 >/dev/null
 
 echo "Release packaging focused tests passed."

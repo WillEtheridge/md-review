@@ -20,14 +20,14 @@ import (
 	"mdreview.dev/mdreview/internal/review"
 	"mdreview.dev/mdreview/internal/server"
 	"mdreview.dev/mdreview/internal/skillassets"
+	"mdreview.dev/mdreview/internal/version"
 	"mdreview.dev/mdreview/internal/workspace"
 	"mdreview.dev/mdreview/web"
 )
 
 const (
-	applicationVersion = "v0.2.0-preview.1"
-	defaultPort        = 4242
-	shutdownTimeout    = 5 * time.Second
+	defaultPort     = 4242
+	shutdownTimeout = 5 * time.Second
 )
 
 type embeddedApplication struct {
@@ -78,7 +78,7 @@ func run(
 		return err
 	}
 	if options.Command == cli.Version {
-		_, err := fmt.Fprintln(output, applicationVersion)
+		_, err := fmt.Fprintln(output, version.Current)
 		return err
 	}
 	if options.Command != cli.Serve {

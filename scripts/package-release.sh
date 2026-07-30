@@ -4,10 +4,25 @@ set -euo pipefail
 
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIRECTORY="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
-OUTPUT_DIRECTORY="${PROJECT_DIRECTORY}/build/release"
-VERSION="v0.1.0"
+
+if (($# < 1 || $# > 2)); then
+  echo "usage: package-release.sh linux/amd64|darwin/arm64 [OUTPUT_DIRECTORY]" >&2
+  exit 1
+fi
+
+TARGET="$1"
+case "${TARGET}" in
+linux/amd64 | darwin/arm64) ;;
+*)
+  echo "unsupported release target: ${TARGET}" >&2
+  exit 1
+  ;;
+esac
+TARGET_NAME="${TARGET/\//-}"
+OUTPUT_DIRECTORY="${2:-${PROJECT_DIRECTORY}/build/release/${TARGET_NAME}}"
+VERSION="$(tr -d '[:space:]' <"${PROJECT_DIRECTORY}/internal/version/version.txt")"
 SOURCE_ROOT="mdreview-${VERSION}-source"
-RELEASE_ROOT="mdreview-${VERSION}-linux-amd64"
+RELEASE_ROOT="mdreview-${VERSION}-${TARGET_NAME}"
 SOURCE_ARCHIVE_NAME="${SOURCE_ROOT}.tar.gz"
 RELEASE_ARCHIVE_NAME="${RELEASE_ROOT}.tar.gz"
 SPDX_NAME="${RELEASE_ROOT}.spdx.json"
@@ -24,9 +39,42 @@ umask 022
 command -v go >/dev/null
 command -v node >/dev/null
 command -v npm >/dev/null
-command -v readelf >/dev/null
-command -v sha256sum >/dev/null
 command -v tar >/dev/null
+if ! command -v sha256sum >/dev/null && ! command -v shasum >/dev/null; then
+  echo "release packaging requires sha256sum or shasum" >&2
+  exit 1
+fi
+
+hash_file() {
+  if command -v sha256sum >/dev/null; then
+    sha256sum "$1" | cut -d ' ' -f 1
+  else
+    shasum -a 256 "$1" | cut -d ' ' -f 1
+  fi
+}
+
+write_checksums() {
+  local output="$1"
+  shift
+  : >"${output}"
+  local file
+  for file in "$@"; do
+    printf '%s  %s\n' "$(hash_file "${file}")" "$(basename -- "${file}")" >>"${output}"
+  done
+}
+
+verify_checksums() {
+  local directory="$1"
+  local line hash name
+  while IFS= read -r line; do
+    hash="${line%% *}"
+    name="${line##*  }"
+    if [[ "$(hash_file "${directory}/${name}")" != "${hash}" ]]; then
+      echo "checksum mismatch: ${name}" >&2
+      exit 1
+    fi
+  done <"${directory}/SHA256SUMS"
+}
 
 SOURCE_ARCHIVE="${TEMPORARY_DIRECTORY}/${SOURCE_ARCHIVE_NAME}"
 node \
@@ -66,7 +114,9 @@ build_from_source() {
     echo "clean source root did not reproduce its source archive: ${build_name}" >&2
     exit 1
   fi
-  "${source_directory}/scripts/build-release.sh" "${candidate_directory}"
+  "${source_directory}/scripts/build-release.sh" \
+    "${TARGET}" \
+    "${candidate_directory}"
 
   node \
     "${source_directory}/scripts/release/archive.mjs" \
@@ -84,16 +134,16 @@ build_from_source() {
     "${artifact_directory}/${SPDX_NAME}"
   node \
     "${source_directory}/scripts/release/verify-spdx.mjs" \
-    "${artifact_directory}/${SPDX_NAME}"
+    "${artifact_directory}/${SPDX_NAME}" \
+    "${VERSION}" \
+    "${TARGET_NAME}"
 
-  (
-    cd "${artifact_directory}"
-    sha256sum \
-      "${SOURCE_ARCHIVE_NAME}" \
-      "${RELEASE_ARCHIVE_NAME}" \
-      "${SPDX_NAME}" >SHA256SUMS
-    sha256sum -c SHA256SUMS
-  )
+  write_checksums \
+    "${artifact_directory}/SHA256SUMS" \
+    "${artifact_directory}/${SOURCE_ARCHIVE_NAME}" \
+    "${artifact_directory}/${RELEASE_ARCHIVE_NAME}" \
+    "${artifact_directory}/${SPDX_NAME}"
+  verify_checksums "${artifact_directory}"
 
   local packaged_directory="${TEMPORARY_DIRECTORY}/${build_name}-packaged"
   mkdir -p "${packaged_directory}"
@@ -103,9 +153,12 @@ build_from_source() {
     "${artifact_directory}/${SPDX_NAME}"
   node \
     "${source_directory}/scripts/release/verify-spdx.mjs" \
-    "${packaged_directory}/${RELEASE_ROOT}/mdreview.spdx.json"
+    "${packaged_directory}/${RELEASE_ROOT}/mdreview.spdx.json" \
+    "${VERSION}" \
+    "${TARGET_NAME}"
   "${source_directory}/scripts/release/verify-binary.sh" \
-    "${packaged_directory}/${RELEASE_ROOT}/mdreview"
+    "${packaged_directory}/${RELEASE_ROOT}/mdreview" \
+    "${TARGET}"
 }
 
 build_from_source first

@@ -42,6 +42,8 @@
 0644 internal/skillassets/mdreview/SKILL.md
 0644 internal/skills/skills.go
 0644 internal/skills/skills_test.go
+0644 internal/version/version.go
+0644 internal/version/version.txt
 0644 internal/workspace/asset.go
 0644 internal/workspace/asset_test.go
 0644 internal/workspace/ignore.go
@@ -76,7 +78,6 @@
 0755 scripts/build-dev.sh
 0755 scripts/build-release.sh
 0755 scripts/check.sh
-0755 scripts/package-macos-preview.sh
 0755 scripts/package-release.sh
 0755 scripts/release/archive.mjs
 0644 scripts/release/archive.test.mjs

@@ -11,7 +11,9 @@ import { createArchive } from "./archive.mjs";
 import { sourceManifestPath } from "./source-manifest.mjs";
 import { verifyArchive } from "./verify-archive.mjs";
 
-const version = "v0.1.0";
+const version = (
+  await readFile(new URL("../../internal/version/version.txt", import.meta.url), "utf8")
+).trim();
 const sourceRoot = `mdreview-${version}-source`;
 const releaseRoot = `mdreview-${version}-linux-amd64`;
 const execFileAsync = promisify(execFile);

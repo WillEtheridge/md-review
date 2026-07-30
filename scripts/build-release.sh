@@ -5,7 +5,45 @@ set -euo pipefail
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIRECTORY="$(cd -- "${SCRIPT_DIRECTORY}/.." && pwd)"
 DEFAULT_OUTPUT_DIRECTORY="${PROJECT_DIRECTORY}/build/release-candidate"
-OUTPUT_DIRECTORY="${1:-${DEFAULT_OUTPUT_DIRECTORY}}"
+
+if (($# < 1 || $# > 2)); then
+  echo "usage: build-release.sh linux/amd64|darwin/arm64 [OUTPUT_DIRECTORY]" >&2
+  exit 1
+fi
+
+TARGET="$1"
+OUTPUT_DIRECTORY="${2:-${DEFAULT_OUTPUT_DIRECTORY}}"
+case "${TARGET}" in
+linux/amd64)
+  TARGET_GOOS="linux"
+  TARGET_GOARCH="amd64"
+  TARGET_ARCH_ENV=(GOAMD64=v1)
+  ;;
+darwin/arm64)
+  TARGET_GOOS="darwin"
+  TARGET_GOARCH="arm64"
+  TARGET_ARCH_ENV=()
+  ;;
+*)
+  echo "unsupported release target: ${TARGET}" >&2
+  exit 1
+  ;;
+esac
+
+PLACEHOLDER_PATH="${PROJECT_DIRECTORY}/web/dist/placeholder.txt"
+PLACEHOLDER_BACKUP=""
+if [[ -f "${PLACEHOLDER_PATH}" ]]; then
+  PLACEHOLDER_BACKUP="$(mktemp "${TMPDIR:-/tmp}/mdreview-placeholder.XXXXXXXX")"
+  install -m 0644 "${PLACEHOLDER_PATH}" "${PLACEHOLDER_BACKUP}"
+fi
+restore_placeholder() {
+  if [[ -n "${PLACEHOLDER_BACKUP}" ]]; then
+    mkdir -p "$(dirname -- "${PLACEHOLDER_PATH}")"
+    install -m 0644 "${PLACEHOLDER_BACKUP}" "${PLACEHOLDER_PATH}"
+    rm -f -- "${PLACEHOLDER_BACKUP}"
+  fi
+}
+trap restore_placeholder EXIT
 
 export GOTOOLCHAIN=local
 export GOWORK=off
@@ -17,7 +55,6 @@ umask 022
 command -v go >/dev/null
 command -v node >/dev/null
 command -v npm >/dev/null
-command -v readelf >/dev/null
 
 if [[ "$(go env GOVERSION)" != "go1.26.5" ]]; then
   echo "release build requires Go 1.26.5" >&2
@@ -42,16 +79,17 @@ npm --prefix "${PROJECT_DIRECTORY}/web" ci --no-audit
 npm --prefix "${PROJECT_DIRECTORY}/web" run test
 npm --prefix "${PROJECT_DIRECTORY}/web" run build
 
-# The tracked marker makes go:embed valid in a source archive. It is removed
-# only after Vite succeeds, so no release compilation can retain the scaffold.
-rm -f -- "${PROJECT_DIRECTORY}/web/dist/placeholder.txt"
+rm -f -- "${PLACEHOLDER_PATH}"
 "${SCRIPT_DIRECTORY}/verify-release-assets.sh"
 
 (
   cd "${PROJECT_DIRECTORY}"
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
-    go test -mod=readonly ./cmd/... ./internal/... ./web
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 \
+  go test -mod=readonly ./cmd/... ./internal/... ./web
+  env \
+    CGO_ENABLED=0 \
+    GOOS="${TARGET_GOOS}" \
+    GOARCH="${TARGET_GOARCH}" \
+    "${TARGET_ARCH_ENV[@]}" \
     go build \
       -mod=readonly \
       -trimpath \
@@ -83,6 +121,9 @@ node \
   "${SCRIPT_DIRECTORY}/release/metadata.mjs" \
   "${PROJECT_DIRECTORY}" \
   "${OUTPUT_DIRECTORY}/mdreview" \
-  "${OUTPUT_DIRECTORY}"
+  "${OUTPUT_DIRECTORY}" \
+  "${TARGET}"
 
-"${SCRIPT_DIRECTORY}/release/verify-binary.sh" "${OUTPUT_DIRECTORY}/mdreview"
+"${SCRIPT_DIRECTORY}/release/verify-binary.sh" \
+  "${OUTPUT_DIRECTORY}/mdreview" \
+  "${TARGET}"
