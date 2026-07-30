@@ -96,14 +96,12 @@
 0755 scripts/test.sh
 0644 scripts/validate-skill-evaluation.mjs
 0755 scripts/verify-release-assets.sh
-0644 testdata/integration/m1/.github/contributing.md
 0644 testdata/integration/m1/.gitignore
 0644 testdata/integration/m1/README.md
 0644 testdata/integration/m1/assets/private.png
 0644 testdata/integration/m1/docs/guide.md
 0644 testdata/integration/m1/ignored-directory/hidden.md
 0644 testdata/integration/m1/ignored.md
-0644 testdata/integration/m2/MILESTONE2.md
 0644 testdata/integration/m2/api-chromium.md
 0644 testdata/integration/m2/api-firefox.md
 0644 testdata/integration/m2/conflict-api-chromium.md

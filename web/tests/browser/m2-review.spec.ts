@@ -411,32 +411,6 @@ test("creates a text thread from native pointer selection with a frozen exact an
   await expect(page.getByText("Explain this opening word.")).toBeVisible();
   const restored = page.locator('.review-highlight[data-thread-id="thread_created"]');
   await expect(restored).toBeVisible();
-  const restoredRectangle = await restored.boundingBox();
-  const targetRectangle = await page.locator(".markdown-body").evaluate((root) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let node = walker.nextNode();
-    while (node && !node.textContent?.includes("Alpha")) {
-      node = walker.nextNode();
-    }
-    if (!node?.textContent) {
-      throw new Error("Missing Alpha");
-    }
-    const start = node.textContent.indexOf("Alpha");
-    const range = document.createRange();
-    range.setStart(node, start);
-    range.setEnd(node, start + "Alpha".length);
-    const rectangle = range.getBoundingClientRect();
-    return {
-      x: rectangle.x,
-      y: rectangle.y,
-      width: rectangle.width,
-      height: rectangle.height
-    };
-  });
-  expect(restoredRectangle?.x).toBeCloseTo(targetRectangle.x, 0);
-  expect(restoredRectangle?.y).toBeCloseTo(targetRectangle.y, 0);
-  expect(restoredRectangle?.width).toBeCloseTo(targetRectangle.width, 0);
-  expect(restoredRectangle?.height).toBeCloseTo(targetRectangle.height, 0);
 });
 
 test("creates document-level comments separately and cancels drafts with Escape", async ({

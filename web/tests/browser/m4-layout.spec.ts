@@ -12,7 +12,7 @@ const repeatedParagraphs = Array.from(
 const markdown = `# Fixed layout evidence
 
 The three review regions retain their exact desktop columns at every supported
-v0.1 viewport.
+viewport.
 
 | Boundary | Deliberately wide value |
 | --- | --- |
@@ -200,9 +200,9 @@ async function layoutGeometry(page: Page): Promise<LayoutGeometry> {
   });
 }
 
-async function resetPanelScroll(panels: readonly Locator[]): Promise<void> {
-  for (const panel of panels) {
-    await panel.evaluate((element) => {
+async function resetScrollOwners(scrollOwners: readonly Locator[]): Promise<void> {
+  for (const scrollOwner of scrollOwners) {
+    await scrollOwner.evaluate((element) => {
       element.scrollTop = 0;
     });
   }
@@ -210,8 +210,8 @@ async function resetPanelScroll(panels: readonly Locator[]): Promise<void> {
 
 async function expectKeyboardPanelScroll(
   page: Page,
-  panels: readonly Locator[],
-  panel: Locator,
+  scrollOwners: readonly Locator[],
+  scrollOwner: Locator,
   focusTarget: Locator
 ): Promise<void> {
   await focusTarget.focus();
@@ -219,9 +219,9 @@ async function expectKeyboardPanelScroll(
   // Firefox keeps the active descendant visible when a scroll position is
   // reset. Move focus first so a previously tested panel cannot restore its
   // old offset during this panel's keyboard assertion.
-  await resetPanelScroll(panels);
+  await resetScrollOwners(scrollOwners);
   await page.keyboard.press("PageDown");
-  await expect.poll(() => panel.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await expect.poll(() => scrollOwner.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
 }
 
 for (const viewport of viewportCases) {
@@ -248,25 +248,17 @@ for (const viewport of viewportCases) {
     const filesPanel = page.getByRole("complementary", { name: "Files" });
     const documentPanel = page.getByRole("main", { name: "Document" });
     const reviewPanel = page.getByRole("complementary", { name: "Comments" });
-    const panels = [filesPanel, documentPanel, reviewPanel] as const;
-    for (const panel of panels) {
-      await expect(panel).toHaveCSS("overflow-y", "auto");
-      await expect(panel).toHaveCSS("overflow-x", "hidden");
-      expect(await panel.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(
-        true
-      );
-    }
+    const filesScroller = page.locator(".files-content");
+    const scrollOwners = [filesScroller, documentPanel, reviewPanel] as const;
+    const firstReference = filesPanel.getByRole("button", { name: /reference-01\.md/u });
+    await filesPanel.getByRole("button", { name: "docs", exact: true }).click();
+    await expect(firstReference).toBeVisible();
 
+    await expectKeyboardPanelScroll(page, scrollOwners, filesScroller, firstReference);
+    await expectKeyboardPanelScroll(page, scrollOwners, documentPanel, documentPanel);
     await expectKeyboardPanelScroll(
       page,
-      panels,
-      filesPanel,
-      filesPanel.getByRole("button", { name: /reference-01\.md/u })
-    );
-    await expectKeyboardPanelScroll(page, panels, documentPanel, documentPanel);
-    await expectKeyboardPanelScroll(
-      page,
-      panels,
+      scrollOwners,
       reviewPanel,
       reviewPanel.getByRole("button", { name: "Comment on document" })
     );

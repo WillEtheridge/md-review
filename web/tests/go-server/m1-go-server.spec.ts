@@ -28,7 +28,6 @@ test("compiled server navigates the contained fixture with same-origin requests"
   ).toBeVisible();
   await expect(page.getByRole("complementary", { name: "Files" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Comments", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: /contributing\.md/u })).toBeVisible();
   await expect(page.getByRole("button", { name: /ignored\.md/u })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /escape\.md/u })).toHaveCount(0);
 

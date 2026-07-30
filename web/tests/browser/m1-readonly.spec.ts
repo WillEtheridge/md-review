@@ -332,6 +332,7 @@ test("shows bounded document read failures and skips oversized reads", async ({ 
   await page.goto(`/`);
   await expect(page.getByRole("heading", { level: 1, name: "Workspace" })).toBeVisible();
 
+  await page.getByRole("button", { name: "docs", exact: true }).click();
   await page.getByRole("button", { name: /large\.md/u }).click();
   await expect(page.getByRole("heading", { name: "This document is too large" })).toBeVisible();
   expect(

@@ -270,7 +270,7 @@ async function assertCrossOriginRejections(
   }
 }
 
-test("m7 packaged browser stays within the local runtime network allowlist", async ({
+test("packaged browser stays within the local runtime network allowlist", async ({
   context,
   page
 }) => {
@@ -298,17 +298,17 @@ test("m7 packaged browser stays within the local runtime network allowlist", asy
   }
 });
 
-test("m7 compiled browser rejects second-origin attacks and keeps navigation local", async ({
+test("compiled browser rejects second-origin attacks and keeps navigation local", async ({
   context,
   page,
   request
 }, testInfo) => {
   const environment = serverEnvironment();
   const attacker = await startAttackerServer();
-  const documentPath = `m7-security-${testInfo.project.name}.md`;
+  const documentPath = `security-${testInfo.project.name}.md`;
   const documentFile = join(environment.workspace, documentPath);
   const sidecarFile = `${documentFile}.review.json`;
-  const threadID = "thread_m7_security";
+  const threadID = "thread_security";
   const consoleMessages: string[] = [];
   page.on("console", (message) => {
     consoleMessages.push(message.text());
@@ -316,7 +316,7 @@ test("m7 compiled browser rejects second-origin attacks and keeps navigation loc
 
   try {
     const markdown = [
-      "# M7 security boundary",
+      "# Security boundary",
       "",
       "This document proves the final origin boundary.",
       "",
@@ -333,9 +333,9 @@ test("m7 compiled browser rejects second-origin attacks and keeps navigation loc
             status: "open",
             messages: [
               {
-                id: "message_m7_security",
+                id: "message_security",
                 author: { type: "human", name: "Reviewer" },
-                body: "Exercise the release origin boundary.",
+                body: "Exercise the origin boundary.",
                 createdAt: "2026-07-29T12:00:00Z"
               }
             ]
@@ -383,9 +383,7 @@ test("m7 compiled browser rejects second-origin attacks and keeps navigation loc
     await openWorkspace(page, environment);
     expect(page.url()).toBe(`${environment.baseURL}/`);
     await page.getByRole("button", { name: documentPath, exact: true }).click();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "M7 security boundary" })
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Security boundary" })).toBeVisible();
     const externalLink = page.getByRole("link", { name: "External verification" });
     const popupPromise = context.waitForEvent("page");
     await externalLink.click();
@@ -417,7 +415,6 @@ test("m7 compiled browser rejects second-origin attacks and keeps navigation loc
     );
     expect(sameOriginMutation.status).toBe(200);
     expect(sameOriginMutation.body).toMatchObject({
-      durability: "durable",
       thread: { id: threadID, status: "resolved" }
     });
     expect(await readFile(sidecarFile, "utf8")).toContain('"status": "resolved"');

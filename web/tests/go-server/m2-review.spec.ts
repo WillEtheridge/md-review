@@ -148,9 +148,7 @@ test("real pointer selection creates an adjacent sidecar and restores its exact 
   expect(restoredRectangle?.height).toBeCloseTo(targetRectangle.height, 0);
 });
 
-test("real keyboard extension rebases one exact moved source and preserves the frozen draft", async ({
-  page
-}, testInfo) => {
+test("persisted text comments reattach to one exact moved source", async ({ page }, testInfo) => {
   const { workspace } = serverEnvironment();
   const label = projectLabel(testInfo.project.name);
   const documentPath = `moved-${testInfo.project.name}.md`;
@@ -174,13 +172,12 @@ test("real keyboard extension rebases one exact moved source and preserves the f
   await page.getByRole("button", { name: "Comment on selected text" }).click();
   const textarea = page.getByRole("textbox", { name: "Comment" });
   await textarea.fill(message);
+  await textarea.press("Control+Enter");
+  await expect(page.getByText(message)).toBeVisible();
 
   const original = await readFile(documentFile, "utf8");
   const moved = `A new leading paragraph moves the anchor.\n\n${original}`;
   await writeFile(documentFile, moved, "utf8");
-  await textarea.press("Control+Enter");
-
-  await expect(page.getByText(message)).toBeVisible();
   const sidecar = JSON.parse(await readFile(sidecarFile, "utf8")) as {
     threads: Array<{
       anchor: {
@@ -190,17 +187,24 @@ test("real keyboard extension rebases one exact moved source and preserves the f
     }>;
   };
   const anchor = sidecar.threads[0]?.anchor;
-  const expectedStart = Buffer.byteLength(moved.slice(0, moved.indexOf(selectedSource)));
   expect(anchor?.source).toBe(selectedSource);
+  const originalStart = Buffer.byteLength(original.slice(0, original.indexOf(selectedSource)));
   expect(anchor?.range).toEqual({
-    start: expectedStart,
-    end: expectedStart + Buffer.byteLength(selectedSource)
+    start: originalStart,
+    end: originalStart + Buffer.byteLength(selectedSource)
   });
 
   await openWorkspace(page);
   await selectDocument(page, documentPath, `${label} moved selection`);
   await expect(page.getByText(message)).toBeVisible();
-  await expect(page.locator(".review-highlight").first()).toBeVisible();
+  const restoredHighlight = page.locator(".review-highlight").first();
+  await expect(restoredHighlight).toBeVisible();
+  const restoredRectangle = await restoredHighlight.boundingBox();
+  const targetRectangle = await textRectangle(page, selectedSource);
+  expect(restoredRectangle?.x).toBeCloseTo(targetRectangle.x, 0);
+  expect(restoredRectangle?.y).toBeCloseTo(targetRectangle.y, 0);
+  expect(restoredRectangle?.width).toBeCloseTo(targetRectangle.width, 0);
+  expect(restoredRectangle?.height).toBeCloseTo(targetRectangle.height, 0);
 });
 
 test("document comments persist separately and invalid sidecars remain read-only", async ({

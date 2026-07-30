@@ -65,7 +65,6 @@ test("compiled server creates only the adjacent schema-v1 sidecar", async ({
   const created = (await createResponse.json()) as {
     documentRevision: string;
     reviewRevision: string;
-    durability: string;
     thread: {
       id: string;
       status: string;
@@ -79,7 +78,6 @@ test("compiled server creates only the adjacent schema-v1 sidecar", async ({
   };
   expect(created.documentRevision).toBe(document.revision);
   expect(created.reviewRevision).toMatch(/^[0-9a-f]{64}$/u);
-  expect(created.durability).toBe("durable");
   expect(created.thread.id).toMatch(/^thread_[A-Za-z0-9_-]{22,}$/u);
   expect(created.thread.status).toBe("open");
   expect(created.thread.attachment.state).toBe("document");

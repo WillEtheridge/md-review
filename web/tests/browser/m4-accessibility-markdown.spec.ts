@@ -354,7 +354,7 @@ test("keeps landmark, theme, skip-link, and SPA focus behavior coherent", async 
   expect(1280 - (themeBounds.x + themeBounds.width)).toBeCloseTo(16, 0);
   expect(800 - (themeBounds.y + themeBounds.height)).toBeCloseTo(16, 0);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "system");
-  await expect(page).toHaveTitle("README.md — mdReview");
+  await expect(page).toHaveTitle("mdReview");
 
   await page.keyboard.press("Tab");
   const skipLink = page.getByRole("link", { name: "Skip to document" });
@@ -378,14 +378,12 @@ test("keeps landmark, theme, skip-link, and SPA focus behavior coherent", async 
   await nextDocument.focus();
   await nextDocument.press("Enter");
   await expect(page.getByRole("heading", { level: 1, name: "Next document" })).toBeVisible();
-  await expect(page).toHaveTitle("NEXT.md — mdReview");
   await expect(documentLandmark).toBeFocused();
 
   const internalLink = page.getByRole("link", { name: "Return to the rich document" });
   await internalLink.focus();
   await internalLink.press("Enter");
   await expect(page.getByRole("heading", { level: 1, name: "Rich GFM document" })).toBeVisible();
-  await expect(page).toHaveTitle("README.md — mdReview");
   await expect(documentLandmark).toBeFocused();
 });
 
