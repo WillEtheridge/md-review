@@ -4,7 +4,6 @@ package server
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -25,10 +24,7 @@ import (
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
-const (
-	contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
-	fallbackRequestID     = "request-id-unavailable"
-)
+const contentSecurityPolicy = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; font-src 'self'; img-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
 
 type reviewOperationRoute uint8
 
@@ -47,9 +43,6 @@ type Config struct {
 	Workspace Workspace
 	Review    ReviewStore
 	BoundHost string
-	// NewRequestID overrides request-ID generation for deterministic
-	// failure-path tests. Production callers leave it nil.
-	NewRequestID func() (string, error)
 }
 
 // Server validates requests and serves embedded browser assets.
@@ -58,7 +51,6 @@ type Server struct {
 	workspace    Workspace
 	review       ReviewStore
 	boundHost    string
-	newRequestID func() (string, error)
 	assetPermits chan struct{}
 }
 
@@ -96,16 +88,11 @@ func New(config Config) (*Server, error) {
 	if config.BoundHost == "" {
 		return nil, fmt.Errorf("server bound host is required")
 	}
-	requestIDGenerator := config.NewRequestID
-	if requestIDGenerator == nil {
-		requestIDGenerator = newRequestID
-	}
 	return &Server{
 		assets:       config.Assets,
 		workspace:    config.Workspace,
 		review:       config.Review,
 		boundHost:    config.BoundHost,
-		newRequestID: requestIDGenerator,
 		assetPermits: make(chan struct{}, limits.MaxConcurrentImageStreams),
 	}, nil
 }
@@ -119,23 +106,12 @@ func (server *Server) Handler() http.Handler {
 // dispatching to the static shell or authenticated private API.
 func (server *Server) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	server.applySecurityHeaders(response)
-	requestID, err := server.newRequestID()
-	if err != nil || requestID == "" {
-		// The response contract still needs a useful correlation value when
-		// entropy is unavailable. This fixed diagnostic identifies the failure
-		// class without pretending to be globally unique.
-		requestID = fallbackRequestID
-		response.Header().Set("X-Request-ID", requestID)
-		server.writeError(response, requestID, http.StatusInternalServerError, "internalError", "An internal error occurred.")
-		return
-	}
-	response.Header().Set("X-Request-ID", requestID)
 	if request.Host != server.boundHost {
-		server.writeError(response, requestID, http.StatusBadRequest, "invalidHost", "This request host is not allowed.")
+		server.writeError(response, http.StatusBadRequest, "invalidHost", "This request host is not allowed.")
 		return
 	}
 	if strings.HasPrefix(request.URL.Path, "/api/") {
-		server.serveAPI(response, request, requestID)
+		server.serveAPI(response, request)
 		return
 	}
 	server.serveStaticAsset(response, request)
@@ -148,75 +124,73 @@ func (server *Server) applySecurityHeaders(response http.ResponseWriter) {
 	response.Header().Set("X-Frame-Options", "DENY")
 }
 
-func (server *Server) serveAPI(response http.ResponseWriter, request *http.Request, requestID string) {
+func (server *Server) serveAPI(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Cache-Control", "no-store")
 	switch request.URL.Path {
 	case "/api/state":
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
+		if !server.requireMethod(response, request, http.MethodGet) {
 			return
 		}
-		server.serveState(response, request, requestID)
+		server.serveState(response, request)
 	case "/api/document":
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
+		if !server.requireMethod(response, request, http.MethodGet) {
 			return
 		}
-		server.serveDocument(response, request, requestID)
+		server.serveDocument(response, request)
 	case "/api/review":
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
+		if !server.requireMethod(response, request, http.MethodGet) {
 			return
 		}
-		server.serveReview(response, request, requestID)
+		server.serveReview(response, request)
 	case "/api/asset":
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
+		if !server.requireMethod(response, request, http.MethodGet) {
 			return
 		}
-		server.serveWorkspaceAsset(response, request, requestID)
+		server.serveWorkspaceAsset(response, request)
 	case "/api/threads":
-		if !server.requireMethod(response, request, requestID, http.MethodPost) {
+		if !server.requireMethod(response, request, http.MethodPost) {
 			return
 		}
-		server.serveCreateThread(response, request, requestID)
+		server.serveCreateThread(response, request)
 	default:
-		server.serveReviewOperation(response, request, requestID)
+		server.serveReviewOperation(response, request)
 	}
 }
 
 func (server *Server) serveReviewOperation(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 ) {
 	operation, targetID, ok := parseReviewOperationRoute(request.URL.Path)
 	if !ok {
-		server.writeError(response, requestID, http.StatusNotFound, "endpointNotFound", "This API endpoint does not exist.")
+		server.writeError(response, http.StatusNotFound, "endpointNotFound", "This API endpoint does not exist.")
 		return
 	}
 
 	switch operation {
 	case reviewOperationReply:
-		if !server.requireMethod(response, request, requestID, http.MethodPost) {
+		if !server.requireMethod(response, request, http.MethodPost) {
 			return
 		}
-		server.serveReply(response, request, requestID, targetID)
+		server.serveReply(response, request, targetID)
 	case reviewOperationStatus:
-		if !server.requireMethod(response, request, requestID, http.MethodPatch) {
+		if !server.requireMethod(response, request, http.MethodPatch) {
 			return
 		}
-		server.serveChangeStatus(response, request, requestID, targetID)
+		server.serveChangeStatus(response, request, targetID)
 	case reviewOperationDelete:
-		if !server.requireMethod(response, request, requestID, http.MethodDelete) {
+		if !server.requireMethod(response, request, http.MethodDelete) {
 			return
 		}
-		server.serveDeleteThread(response, request, requestID, targetID)
+		server.serveDeleteThread(response, request, targetID)
 	default:
-		server.writeError(response, requestID, http.StatusNotFound, "endpointNotFound", "This API endpoint does not exist.")
+		server.writeError(response, http.StatusNotFound, "endpointNotFound", "This API endpoint does not exist.")
 	}
 }
 
 func (server *Server) requireMethod(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 	allowed string,
 ) bool {
 	if request.Method == allowed {
@@ -225,7 +199,6 @@ func (server *Server) requireMethod(
 	response.Header().Set("Allow", allowed)
 	server.writeError(
 		response,
-		requestID,
 		http.StatusMethodNotAllowed,
 		"methodNotAllowed",
 		fmt.Sprintf("This endpoint only accepts %s requests.", allowed),
@@ -233,12 +206,11 @@ func (server *Server) requireMethod(
 	return false
 }
 
-func (server *Server) serveState(response http.ResponseWriter, request *http.Request, requestID string) {
+func (server *Server) serveState(response http.ResponseWriter, request *http.Request) {
 	since, ok := workspaceRevisionQuery(request)
 	if !ok {
 		server.writeError(
 			response,
-			requestID,
 			http.StatusBadRequest,
 			"invalidWorkspaceRevision",
 			"Use the current workspace revision to check for changes.",
@@ -247,7 +219,7 @@ func (server *Server) serveState(response http.ResponseWriter, request *http.Req
 	}
 	snapshot, err := server.workspace.Snapshot(request.Context())
 	if err != nil {
-		server.writeError(response, requestID, http.StatusInternalServerError, "workspaceUnavailable", "The workspace is temporarily unavailable.")
+		server.writeError(response, http.StatusInternalServerError, "workspaceUnavailable", "The workspace is temporarily unavailable.")
 		return
 	}
 	if since != nil && *since == snapshot.Revision {
@@ -267,33 +239,33 @@ func (server *Server) serveState(response http.ResponseWriter, request *http.Req
 	})
 }
 
-func (server *Server) serveDocument(response http.ResponseWriter, request *http.Request, requestID string) {
+func (server *Server) serveDocument(response http.ResponseWriter, request *http.Request) {
 	documentPath, ok := documentPathQuery(request)
 	if !ok {
-		server.writeError(response, requestID, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
+		server.writeError(response, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
 		return
 	}
 	document, err := server.workspace.ReadDocument(request.Context(), documentPath)
 	if err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusOK, documentResponse{Path: document.Path, Revision: document.Revision, Source: document.Source})
 }
 
-func (server *Server) serveReview(response http.ResponseWriter, request *http.Request, requestID string) {
+func (server *Server) serveReview(response http.ResponseWriter, request *http.Request) {
 	documentPath, ok := documentPathQuery(request)
 	if !ok {
-		server.writeError(response, requestID, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
+		server.writeError(response, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
 		return
 	}
 	if _, err := server.workspace.ReadDocument(request.Context(), documentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	snapshot, err := server.review.Read(request.Context(), documentPath)
 	if err != nil {
-		server.writeReviewError(response, requestID, err)
+		server.writeReviewError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusOK, snapshot)
@@ -302,28 +274,27 @@ func (server *Server) serveReview(response http.ResponseWriter, request *http.Re
 func (server *Server) serveCreateThread(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 ) {
-	if !server.validateMutationRequest(response, request, requestID) {
+	if !server.validateMutationRequest(response, request) {
 		return
 	}
 
 	input, err := decodeCreateThreadRequest(response, request)
 	if err != nil {
 		if isRequestTooLarge(err) {
-			server.writeError(response, requestID, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
+			server.writeError(response, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
 		} else {
-			server.writeError(response, requestID, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check the comment and selected text, then try again.")
+			server.writeError(response, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check the comment and selected text, then try again.")
 		}
 		return
 	}
 	if _, err := server.workspace.ReadDocument(request.Context(), input.DocumentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	result, err := server.review.CreateThread(request.Context(), input)
 	if err != nil {
-		server.writeReviewError(response, requestID, err)
+		server.writeReviewError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusCreated, result)
@@ -332,19 +303,18 @@ func (server *Server) serveCreateThread(
 func (server *Server) validateMutationRequest(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 ) bool {
 	if request.Header.Get("Origin") != "http://"+server.boundHost {
-		server.writeError(response, requestID, http.StatusForbidden, "invalidOrigin", "This mutation origin is not allowed.")
+		server.writeError(response, http.StatusForbidden, "invalidOrigin", "This mutation origin is not allowed.")
 		return false
 	}
 	mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		server.writeError(response, requestID, http.StatusUnsupportedMediaType, "unsupportedMediaType", "Send this request as JSON.")
+		server.writeError(response, http.StatusUnsupportedMediaType, "unsupportedMediaType", "Send this request as JSON.")
 		return false
 	}
 	if request.ContentLength > limits.MaxMutationRequestBodyBytes {
-		server.writeError(response, requestID, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
+		server.writeError(response, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
 		return false
 	}
 	return true
@@ -353,25 +323,24 @@ func (server *Server) validateMutationRequest(
 func (server *Server) serveReply(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 	threadID string,
 ) {
-	if !server.validateMutationRequest(response, request, requestID) {
+	if !server.validateMutationRequest(response, request) {
 		return
 	}
 	input, err := decodeReplyRequest(response, request)
 	if err != nil {
-		server.writeMutationDecodeError(response, requestID, err)
+		server.writeMutationDecodeError(response, err)
 		return
 	}
 	input.ThreadID = threadID
 	if _, err := server.workspace.ReadDocument(request.Context(), input.DocumentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	result, err := server.review.Reply(request.Context(), input)
 	if err != nil {
-		server.writeReviewError(response, requestID, err)
+		server.writeReviewError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusCreated, result)
@@ -380,25 +349,24 @@ func (server *Server) serveReply(
 func (server *Server) serveChangeStatus(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 	threadID string,
 ) {
-	if !server.validateMutationRequest(response, request, requestID) {
+	if !server.validateMutationRequest(response, request) {
 		return
 	}
 	input, err := decodeChangeStatusRequest(response, request)
 	if err != nil {
-		server.writeMutationDecodeError(response, requestID, err)
+		server.writeMutationDecodeError(response, err)
 		return
 	}
 	input.ThreadID = threadID
 	if _, err := server.workspace.ReadDocument(request.Context(), input.DocumentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	result, err := server.review.ChangeStatus(request.Context(), input)
 	if err != nil {
-		server.writeReviewError(response, requestID, err)
+		server.writeReviewError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusOK, result)
@@ -407,25 +375,24 @@ func (server *Server) serveChangeStatus(
 func (server *Server) serveDeleteThread(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 	threadID string,
 ) {
-	if !server.validateMutationRequest(response, request, requestID) {
+	if !server.validateMutationRequest(response, request) {
 		return
 	}
 	input, err := decodeDeleteThreadRequest(response, request)
 	if err != nil {
-		server.writeMutationDecodeError(response, requestID, err)
+		server.writeMutationDecodeError(response, err)
 		return
 	}
 	input.ThreadID = threadID
 	if _, err := server.workspace.ReadDocument(request.Context(), input.DocumentPath); err != nil {
-		server.writeDocumentError(response, requestID, err)
+		server.writeDocumentError(response, err)
 		return
 	}
 	result, err := server.review.DeleteThread(request.Context(), input)
 	if err != nil {
-		server.writeReviewError(response, requestID, err)
+		server.writeReviewError(response, err)
 		return
 	}
 	server.writeJSON(response, http.StatusOK, result)
@@ -433,14 +400,13 @@ func (server *Server) serveDeleteThread(
 
 func (server *Server) writeMutationDecodeError(
 	response http.ResponseWriter,
-	requestID string,
 	err error,
 ) {
 	if isRequestTooLarge(err) {
-		server.writeError(response, requestID, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
+		server.writeError(response, http.StatusRequestEntityTooLarge, "requestTooLarge", "This review request is too large.")
 		return
 	}
-	server.writeError(response, requestID, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check this review change, then try again.")
+	server.writeError(response, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check this review change, then try again.")
 }
 
 func documentPathQuery(request *http.Request) (string, bool) {
@@ -687,24 +653,24 @@ func isRequestTooLarge(err error) bool {
 	return errors.As(err, &maximum)
 }
 
-func (server *Server) writeDocumentError(response http.ResponseWriter, requestID string, err error) {
+func (server *Server) writeDocumentError(response http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, workspace.ErrInvalidRelativePath):
-		server.writeError(response, requestID, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
+		server.writeError(response, http.StatusBadRequest, "invalidDocumentPath", "Choose a valid Markdown document.")
 	case errors.Is(err, workspace.ErrDocumentNotIndexed), errors.Is(err, workspace.ErrUnsafeEntry):
-		server.writeError(response, requestID, http.StatusNotFound, "documentNotFound", "This Markdown document is not available.")
+		server.writeError(response, http.StatusNotFound, "documentNotFound", "This Markdown document is not available.")
 	case errors.Is(err, workspace.ErrDocumentTooLarge):
-		server.writeError(response, requestID, http.StatusRequestEntityTooLarge, "documentTooLarge", "This Markdown file is too large to open.")
+		server.writeError(response, http.StatusRequestEntityTooLarge, "documentTooLarge", "This Markdown file is too large to open.")
 	case errors.Is(err, workspace.ErrDocumentInvalidUTF8):
-		server.writeError(response, requestID, http.StatusUnprocessableEntity, "documentInvalidUtf8", "This Markdown file is not valid UTF-8.")
+		server.writeError(response, http.StatusUnprocessableEntity, "documentInvalidUtf8", "This Markdown file is not valid UTF-8.")
 	case errors.Is(err, workspace.ErrDocumentRead):
-		server.writeError(response, requestID, http.StatusInternalServerError, "documentUnavailable", "This Markdown document could not be read.")
+		server.writeError(response, http.StatusInternalServerError, "documentUnavailable", "This Markdown document could not be read.")
 	default:
-		server.writeError(response, requestID, http.StatusInternalServerError, "internalError", "An internal error occurred.")
+		server.writeError(response, http.StatusInternalServerError, "internalError", "An internal error occurred.")
 	}
 }
 
-func (server *Server) writeReviewError(response http.ResponseWriter, requestID string, err error) {
+func (server *Server) writeReviewError(response http.ResponseWriter, err error) {
 	var conflict *review.ConflictError
 	if errors.As(err, &conflict) {
 		code := "reviewChanged"
@@ -713,36 +679,35 @@ func (server *Server) writeReviewError(response http.ResponseWriter, requestID s
 			code = "documentChanged"
 			message = "The document changed on disk. Your change was not submitted."
 		}
-		server.writeConflict(response, requestID, code, message, conflict.Current)
+		server.writeConflict(response, code, message, conflict.Current)
 		return
 	}
 	switch {
 	case errors.Is(err, review.ErrInvalidOperation):
-		server.writeError(response, requestID, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check the comment and selected text, then try again.")
+		server.writeError(response, http.StatusUnprocessableEntity, "invalidReviewOperation", "Check the comment and selected text, then try again.")
 	case errors.Is(err, review.ErrTooLarge):
-		server.writeError(response, requestID, http.StatusRequestEntityTooLarge, "reviewTooLarge", "This review sidecar is too large to open or update.")
+		server.writeError(response, http.StatusRequestEntityTooLarge, "reviewTooLarge", "This review sidecar is too large to open or update.")
 	case errors.Is(err, review.ErrUnsupportedSchema):
-		server.writeError(response, requestID, http.StatusUnprocessableEntity, "reviewUnsupportedSchema", "This review uses a newer unsupported schema version.")
+		server.writeError(response, http.StatusUnprocessableEntity, "reviewUnsupportedSchema", "This review uses a newer unsupported schema version.")
 	case errors.Is(err, review.ErrInvalid):
-		server.writeError(response, requestID, http.StatusUnprocessableEntity, "reviewInvalid", "This review sidecar is invalid and was left unchanged.")
+		server.writeError(response, http.StatusUnprocessableEntity, "reviewInvalid", "This review sidecar is invalid and was left unchanged.")
 	case errors.Is(err, review.ErrUnsafe):
-		server.writeError(response, requestID, http.StatusUnprocessableEntity, "reviewUnsafe", "This review sidecar is not a safe regular file.")
+		server.writeError(response, http.StatusUnprocessableEntity, "reviewUnsafe", "This review sidecar is not a safe regular file.")
 	case errors.Is(err, review.ErrUnavailable):
-		server.writeError(response, requestID, http.StatusInternalServerError, "reviewUnavailable", "This review sidecar could not be read or updated.")
+		server.writeError(response, http.StatusInternalServerError, "reviewUnavailable", "This review sidecar could not be read or updated.")
 	default:
-		server.writeError(response, requestID, http.StatusInternalServerError, "internalError", "An internal error occurred.")
+		server.writeError(response, http.StatusInternalServerError, "internalError", "An internal error occurred.")
 	}
 }
 
 func (server *Server) writeConflict(
 	response http.ResponseWriter,
-	requestID string,
 	code string,
 	message string,
 	current review.CurrentRevisions,
 ) {
 	server.writeJSON(response, http.StatusConflict, conflictResponse{
-		Error:   apiError{Code: code, Message: message, RequestID: requestID},
+		Error:   apiError{Code: code, Message: message},
 		Current: current,
 	})
 }
@@ -796,8 +761,8 @@ func containsParentPathSegment(value string) bool {
 	return false
 }
 
-func (server *Server) writeError(response http.ResponseWriter, requestID string, status int, code string, message string) {
-	server.writeJSON(response, status, errorResponse{Error: apiError{Code: code, Message: message, RequestID: requestID}})
+func (server *Server) writeError(response http.ResponseWriter, status int, code string, message string) {
+	server.writeJSON(response, status, errorResponse{Error: apiError{Code: code, Message: message}})
 }
 
 func (server *Server) writeJSON(response http.ResponseWriter, status int, value any) {
@@ -910,15 +875,6 @@ type errorResponse struct {
 }
 
 type apiError struct {
-	Code      string `json:"code"`
-	Message   string `json:"message"`
-	RequestID string `json:"requestId"`
-}
-
-func newRequestID() (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(bytes), nil
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }

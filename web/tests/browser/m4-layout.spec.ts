@@ -174,8 +174,7 @@ async function mockLayoutWorkspace(page: Page): Promise<void> {
     await fulfillJSON(route, 404, {
       error: {
         code: "endpointNotFound",
-        message: "This API endpoint does not exist.",
-        requestId: "request_m4_layout_unknown"
+        message: "This API endpoint does not exist."
       }
     });
   });

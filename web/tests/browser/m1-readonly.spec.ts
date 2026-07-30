@@ -27,8 +27,7 @@ function errorBody(reply: Exclude<Reply, { status: 200 }>): unknown {
   return {
     error: {
       code: reply.code,
-      message: reply.message,
-      requestId: `request-${String(reply.status)}`
+      message: reply.message
     }
   };
 }
@@ -70,8 +69,7 @@ async function mockApi(page: Page, workspace: MockWorkspace): Promise<ObservedRe
         await fulfillJson(route, 404, {
           error: {
             code: "documentNotFound",
-            message: "This Markdown document was not found.",
-            requestId: "request-missing"
+            message: "This Markdown document was not found."
           }
         });
         return;
@@ -102,8 +100,7 @@ async function mockApi(page: Page, workspace: MockWorkspace): Promise<ObservedRe
     await fulfillJson(route, 404, {
       error: {
         code: "endpointNotFound",
-        message: "Endpoint not found.",
-        requestId: "request-endpoint"
+        message: "Endpoint not found."
       }
     });
   });

@@ -186,8 +186,7 @@ class MockM5Server {
           await fulfillJSON(route, 404, {
             error: {
               code: "documentNotFound",
-              message: "This Markdown document was not found.",
-              requestId: "m5-document-missing"
+              message: "This Markdown document was not found."
             }
           });
           return;
@@ -217,8 +216,7 @@ class MockM5Server {
         await fulfillJSON(route, 409, {
           error: {
             code: "reviewChanged",
-            message: "The review changed.",
-            requestId: "m5-review-changed"
+            message: "The review changed."
           },
           current: {
             documentRevision: this.reviewDocumentRevision,
@@ -231,8 +229,7 @@ class MockM5Server {
       await fulfillJSON(route, 404, {
         error: {
           code: "endpointNotFound",
-          message: "This API endpoint does not exist.",
-          requestId: "m5-endpoint-missing"
+          message: "This API endpoint does not exist."
         }
       });
     });
@@ -262,8 +259,7 @@ class MockM5Server {
         await fulfillJSON(route, failure.status, {
           error: {
             code: failure.code,
-            message: failure.message,
-            requestId: `m5-state-${String(failure.status)}`
+            message: failure.message
           }
         });
         return;

@@ -111,15 +111,13 @@ describe("Milestone 1 API decoding", () => {
       decodeErrorEnvelope({
         error: {
           code: "documentInvalidUtf8",
-          message: "This Markdown file is not valid UTF-8.",
-          requestId: "request-id"
+          message: "This Markdown file is not valid UTF-8."
         }
       })
     ).toEqual({
       error: {
         code: "documentInvalidUtf8",
-        message: "This Markdown file is not valid UTF-8.",
-        requestId: "request-id"
+        message: "This Markdown file is not valid UTF-8."
       }
     });
   });
@@ -211,8 +209,7 @@ describe("Milestone 1 API decoding", () => {
       decodeErrorEnvelope({
         error: {
           code: "futureCode",
-          message: "No",
-          requestId: "request-id"
+          message: "No"
         }
       })
     ).toThrow(ApiProtocolError);
@@ -279,8 +276,7 @@ describe("ApiClient", () => {
     const envelope: ErrorEnvelope = {
       error: {
         code: "documentInvalidUtf8",
-        message: "This Markdown file is not valid UTF-8.",
-        requestId: "request-id"
+        message: "This Markdown file is not valid UTF-8."
       }
     };
     const client = new ApiClient(() =>
@@ -294,7 +290,6 @@ describe("ApiClient", () => {
     await expect(client.getDocument("bad.md")).rejects.toMatchObject({
       name: "ApiRequestError",
       code: "documentInvalidUtf8",
-      requestId: "request-id",
       status: 422
     });
   });
@@ -376,8 +371,7 @@ describe("ApiClient", () => {
           JSON.stringify({
             error: {
               code: "assetTooLarge",
-              message: "This image is too large.",
-              requestId: "asset-request"
+              message: "This image is too large."
             }
           }),
           {
@@ -389,7 +383,6 @@ describe("ApiClient", () => {
 
     await expect(client.getAsset("README.md", "large.png")).rejects.toMatchObject({
       code: "assetTooLarge",
-      requestId: "asset-request",
       status: 413
     });
   });
@@ -646,8 +639,7 @@ export function apiRequestError(code: ErrorEnvelope["error"]["code"]): ApiReques
     {
       error: {
         code,
-        message: "Safe message",
-        requestId: "request-id"
+        message: "Safe message"
       }
     },
     400

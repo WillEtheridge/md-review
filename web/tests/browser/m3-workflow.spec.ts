@@ -189,8 +189,7 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
       await fulfillJson(route, 409, {
         error: {
           code: "reviewChanged",
-          message: "The review changed on disk. Your change was not submitted.",
-          requestId: "request-review-change"
+          message: "The review changed on disk. Your change was not submitted."
         },
         current: {
           documentRevision,
@@ -251,8 +250,7 @@ async function mockWorkflowAPI(page: Page, server: MockServer): Promise<void> {
       await fulfillJson(route, 422, {
         error: {
           code: "invalidReviewOperation",
-          message: "The operation is not valid.",
-          requestId: "request-invalid"
+          message: "The operation is not valid."
         }
       });
       return;

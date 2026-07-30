@@ -19,48 +19,6 @@ import (
 	"mdreview.dev/mdreview/internal/workspace"
 )
 
-func TestRequestIDFailureRetainsSecurityAndErrorContract(t *testing.T) {
-	server, err := New(Config{
-		Assets: fstest.MapFS{
-			"index.html": &fstest.MapFile{Data: []byte("application shell")},
-		},
-		Workspace: fakeWorkspace{},
-		Review:    fakeReviewStore{},
-		BoundHost: "127.0.0.1:4242",
-		NewRequestID: func() (string, error) {
-			return "", errors.New("entropy unavailable")
-		},
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-
-	response := httptest.NewRecorder()
-	server.ServeHTTP(
-		response,
-		authenticatedRequest(http.MethodGet, "http://127.0.0.1:4242/api/state"),
-	)
-
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
-	}
-	assertSecurityHeaders(t, response)
-	assertErrorCode(t, response, "internalError")
-	var envelope errorResponse
-	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
-		t.Fatalf("decode error: %v", err)
-	}
-	if got := response.Header().Get("X-Request-ID"); got != fallbackRequestID ||
-		envelope.Error.RequestID != got {
-		t.Fatalf(
-			"request IDs = header %q, envelope %q, want %q",
-			got,
-			envelope.Error.RequestID,
-			fallbackRequestID,
-		)
-	}
-}
-
 func TestServerRejectsWrongHostAndAPIMethods(t *testing.T) {
 	server := newTestServer(t)
 	request := httptest.NewRequest(http.MethodGet, "http://localhost:4242/", nil)
@@ -704,9 +662,6 @@ func assertSecurityHeaders(t *testing.T, response *httptest.ResponseRecorder) {
 	if response.Header().Get("Referrer-Policy") != "no-referrer" || response.Header().Get("X-Content-Type-Options") != "nosniff" {
 		t.Fatalf("security headers = %#v", response.Header())
 	}
-	if response.Header().Get("X-Request-ID") == "" {
-		t.Fatal("missing request ID")
-	}
 	if response.Header().Get("Access-Control-Allow-Origin") != "" {
 		t.Fatal("unexpected CORS opt-in")
 	}
@@ -718,7 +673,7 @@ func assertErrorCode(t *testing.T, response *httptest.ResponseRecorder, want str
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode error: %v", err)
 	}
-	if envelope.Error.Code != want || envelope.Error.RequestID == "" {
+	if envelope.Error.Code != want {
 		t.Fatalf("error = %#v, want code %q", envelope.Error, want)
 	}
 }

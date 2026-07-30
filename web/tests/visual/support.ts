@@ -342,8 +342,7 @@ async function fulfillAPI(route: Route, state: VisualState): Promise<void> {
       await fulfillJSON(route, state.documentFailure.status, {
         error: {
           code: state.documentFailure.code,
-          message: state.documentFailure.message,
-          requestId: "request_m4_document_error"
+          message: state.documentFailure.message
         }
       });
       return;
@@ -361,8 +360,7 @@ async function fulfillAPI(route: Route, state: VisualState): Promise<void> {
       await fulfillJSON(route, state.reviewFailure.status, {
         error: {
           code: state.reviewFailure.code,
-          message: state.reviewFailure.message,
-          requestId: "request_m4_review_error"
+          message: state.reviewFailure.message
         }
       });
       return;
@@ -384,8 +382,7 @@ async function fulfillAPI(route: Route, state: VisualState): Promise<void> {
     await fulfillJSON(route, 409, {
       error: {
         code: "reviewChanged",
-        message: "The review changed on disk. Your change was not submitted.",
-        requestId: "request_m4_conflict"
+        message: "The review changed on disk. Your change was not submitted."
       },
       current: {
         documentRevision,
@@ -398,8 +395,7 @@ async function fulfillAPI(route: Route, state: VisualState): Promise<void> {
   await fulfillJSON(route, 404, {
     error: {
       code: "endpointNotFound",
-      message: "This API endpoint does not exist.",
-      requestId: "request_m4_unknown"
+      message: "This API endpoint does not exist."
     }
   });
 }

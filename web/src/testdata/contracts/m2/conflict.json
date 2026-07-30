@@ -1,8 +1,7 @@
 {
   "error": {
     "code": "documentChanged",
-    "message": "The selected source changed or is no longer unique.",
-    "requestId": "01JEXAMPLE00000000000000000"
+    "message": "The selected source changed or is no longer unique."
   },
   "current": {
     "documentRevision": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",

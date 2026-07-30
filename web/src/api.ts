@@ -204,7 +204,6 @@ export interface ErrorEnvelope {
   error: {
     code: ApiErrorCode;
     message: string;
-    requestId: string;
   };
 }
 
@@ -217,7 +216,6 @@ export class ApiProtocolError extends Error {
 
 export class ApiRequestError extends Error {
   readonly code: ApiErrorCode;
-  readonly requestId: string;
   readonly status: number;
   readonly current: CurrentRevisions | undefined;
 
@@ -225,7 +223,6 @@ export class ApiRequestError extends Error {
     super(envelope.error.message);
     this.name = "ApiRequestError";
     this.code = envelope.error.code;
-    this.requestId = envelope.error.requestId;
     this.status = status;
     this.current = current;
   }
@@ -397,8 +394,7 @@ export function decodeErrorEnvelope(value: unknown): ErrorEnvelope {
   return {
     error: {
       code: code as ApiErrorCode,
-      message: nonEmptyString(error.message),
-      requestId: nonEmptyString(error.requestId)
+      message: nonEmptyString(error.message)
     }
   };
 }

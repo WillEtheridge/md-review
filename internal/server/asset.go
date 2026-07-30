@@ -17,13 +17,11 @@ var errAssetUnsupportedType = errors.New("asset type is unsupported")
 func (server *Server) serveWorkspaceAsset(
 	response http.ResponseWriter,
 	request *http.Request,
-	requestID string,
 ) {
 	documentPath, reference, ok := assetQuery(request)
 	if !ok {
 		server.writeError(
 			response,
-			requestID,
 			http.StatusBadRequest,
 			"invalidAssetRequest",
 			"Choose one relative image from the current Markdown document.",
@@ -85,7 +83,6 @@ func (server *Server) serveWorkspaceAsset(
 	case errors.Is(err, workspace.ErrAssetNotFound):
 		server.writeError(
 			response,
-			requestID,
 			http.StatusNotFound,
 			"assetNotFound",
 			"This image could not be found safely inside the workspace.",
@@ -93,7 +90,6 @@ func (server *Server) serveWorkspaceAsset(
 	case errors.Is(err, workspace.ErrAssetTooLarge):
 		server.writeError(
 			response,
-			requestID,
 			http.StatusRequestEntityTooLarge,
 			"assetTooLarge",
 			"This image is larger than 20 MiB.",
@@ -101,7 +97,6 @@ func (server *Server) serveWorkspaceAsset(
 	case errors.Is(err, errAssetUnsupportedType):
 		server.writeError(
 			response,
-			requestID,
 			http.StatusUnsupportedMediaType,
 			"assetUnsupportedType",
 			"Use a PNG, JPEG, GIF, or WebP image.",
@@ -109,7 +104,6 @@ func (server *Server) serveWorkspaceAsset(
 	default:
 		server.writeError(
 			response,
-			requestID,
 			http.StatusInternalServerError,
 			"assetUnavailable",
 			"This image is temporarily unavailable.",

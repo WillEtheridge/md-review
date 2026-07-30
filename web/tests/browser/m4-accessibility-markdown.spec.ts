@@ -237,8 +237,7 @@ async function mockWorkspace(page: Page, threads: readonly M4Thread[] = []): Pro
       body: JSON.stringify({
         error: {
           code: "documentNotFound",
-          message: "The document was not found.",
-          requestId: "m4-missing"
+          message: "The document was not found."
         }
       })
     });

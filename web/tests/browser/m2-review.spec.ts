@@ -211,8 +211,7 @@ async function mockReviewApi(page: Page, server: MockServer): Promise<void> {
     await fulfillJson(route, 404, {
       error: {
         code: "endpointNotFound",
-        message: "Endpoint not found.",
-        requestId: "request-missing"
+        message: "Endpoint not found."
       }
     });
   });
@@ -548,8 +547,7 @@ test("retains a failed draft and frozen selection, then reloads after cancellati
     await fulfillJson(route, 409, {
       error: {
         code: "documentChanged",
-        message: "The document changed on disk. Your change was not submitted.",
-        requestId: "request-conflict"
+        message: "The document changed on disk. Your change was not submitted."
       },
       current: {
         documentRevision: changedDocumentRevision,
