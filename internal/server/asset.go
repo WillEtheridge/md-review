@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/workspace"
 )
@@ -40,21 +39,12 @@ func (server *Server) serveWorkspaceAsset(
 	case <-request.Context().Done():
 		return
 	}
-	finishMeasuredStream := server.measurements.BeginAssetStream()
-	defer finishMeasuredStream()
-
 	started := false
 	err := server.workspace.ReadAsset(
 		request.Context(),
 		documentPath,
 		reference,
 		func(reader io.Reader, _ int64) error {
-			if server.measurements != nil {
-				reader = measuredAssetReader{
-					reader:   reader,
-					counters: server.measurements,
-				}
-			}
 			prefix, err := io.ReadAll(io.LimitReader(reader, 512))
 			if err != nil {
 				return err
@@ -125,17 +115,6 @@ func (server *Server) serveWorkspaceAsset(
 			"This image is temporarily unavailable.",
 		)
 	}
-}
-
-type measuredAssetReader struct {
-	reader   io.Reader
-	counters *gatee.Counters
-}
-
-func (reader measuredAssetReader) Read(buffer []byte) (int, error) {
-	read, err := reader.reader.Read(buffer)
-	reader.counters.RecordAssetStreamBytes(read)
-	return read, err
 }
 
 func assetQuery(request *http.Request) (string, string, bool) {

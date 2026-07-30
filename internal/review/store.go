@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"mdreview.dev/mdreview/internal/filesystem"
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 )
 
@@ -163,10 +162,6 @@ type StoreOptions struct {
 	// MutationAttempts bounds retries after an observed direct sidecar change.
 	// Zero uses the filesystem gateway default.
 	MutationAttempts int
-
-	// Measurements records Gate E content-read counters when the compiled
-	// baseline opts in. Ordinary production callers leave it nil.
-	Measurements *gatee.Counters
 }
 
 type keyedLock struct {
@@ -191,7 +186,6 @@ type Store struct {
 	now              func() time.Time
 	newID            func(prefix string) (string, error)
 	mutationAttempts int
-	measurements     *gatee.Counters
 
 	// locksMu protects locks and reference counts. A keyed mutex is held only
 	// for one derived sidecar, so unrelated documents can mutate concurrently.
@@ -232,7 +226,6 @@ func newStore(files gateway, options StoreOptions) (*Store, error) {
 		now:              now,
 		newID:            newID,
 		mutationAttempts: options.MutationAttempts,
-		measurements:     options.Measurements,
 		locks:            make(map[string]*keyedLock),
 	}, nil
 }
@@ -332,7 +325,6 @@ func (store *Store) CreateThread(
 			MaxAttempts: store.mutationAttempts,
 		},
 		func(current []byte, exists bool) ([]byte, error) {
-			store.measurements.RecordSidecarContentRead(len(current))
 			markdown, readErr := store.readMarkdown(input.DocumentPath)
 			if readErr != nil {
 				return nil, fmt.Errorf("%w: read document: %v", ErrUnavailable, readErr)
@@ -422,7 +414,6 @@ func (store *Store) CreateThread(
 
 func (store *Store) readSidecar(sidecarPath string) ([]byte, bool, error) {
 	data, err := store.filesystem.ReadFile(sidecarPath, limits.MaxReviewSidecarBytes)
-	store.measurements.RecordSidecarContentRead(len(data))
 	if err == nil {
 		return data, true, nil
 	}
@@ -480,7 +471,6 @@ func (store *Store) translateMutationError(err error, documentPath string) error
 
 func (store *Store) readMarkdown(documentPath string) ([]byte, error) {
 	data, err := store.filesystem.ReadFile(documentPath, limits.MaxMarkdownDocumentBytes)
-	store.measurements.RecordMarkdownContentRead(len(data))
 	return data, err
 }
 

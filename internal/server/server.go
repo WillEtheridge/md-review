@@ -20,7 +20,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/review"
 	"mdreview.dev/mdreview/internal/workspace"
@@ -49,9 +48,6 @@ type Config struct {
 	Workspace Workspace
 	Review    ReviewStore
 	BoundHost string
-	// Measurements enables the loopback-only Gate E counter endpoint.
-	// Ordinary production callers leave it nil.
-	Measurements *gatee.Counters
 	// NewRequestID overrides request-ID generation for deterministic
 	// failure-path tests. Production callers leave it nil.
 	NewRequestID func() (string, error)
@@ -65,7 +61,6 @@ type Server struct {
 	boundHost    string
 	newRequestID func() (string, error)
 	assetPermits chan struct{}
-	measurements *gatee.Counters
 }
 
 // Workspace is the server's consumer-owned read-only view of an indexed
@@ -116,7 +111,6 @@ func New(config Config) (*Server, error) {
 		boundHost:    config.BoundHost,
 		newRequestID: requestIDGenerator,
 		assetPermits: make(chan struct{}, limits.MaxConcurrentImageStreams),
-		measurements: config.Measurements,
 	}, nil
 }
 
@@ -181,15 +175,6 @@ func (server *Server) serveAPI(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		server.serveWorkspaceAsset(response, request, requestID)
-	case "/api/gate-e/counters":
-		if server.measurements == nil {
-			server.serveReviewOperation(response, request, requestID)
-			return
-		}
-		if !server.requireMethod(response, request, requestID, http.MethodGet) {
-			return
-		}
-		server.writeJSON(response, http.StatusOK, server.measurements.Snapshot())
 	case "/api/threads":
 		if !server.requireMethod(response, request, requestID, http.MethodPost) {
 			return

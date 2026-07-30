@@ -13,7 +13,6 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 	"mdreview.dev/mdreview/internal/workspace"
 )
@@ -204,8 +203,6 @@ func TestWorkspaceAssetAbortsGrowthBeyondLimit(t *testing.T) {
 			return visit(reader, 1024)
 		},
 	})
-	counters := &gatee.Counters{}
-	server.measurements = counters
 	response := &discardResponseWriter{header: make(http.Header)}
 
 	panicValue := catchPanic(func() {
@@ -219,12 +216,6 @@ func TestWorkspaceAssetAbortsGrowthBeyondLimit(t *testing.T) {
 	}
 	if len(server.assetPermits) != 0 {
 		t.Fatalf("asset permits retained after abort = %d", len(server.assetPermits))
-	}
-	observed := counters.Snapshot()
-	if observed.ActiveAssetStreams != 0 ||
-		observed.MaximumAssetStreams != 1 ||
-		observed.AssetStreamBytes != uint64(limits.MaxImageAssetBytes+1) {
-		t.Fatalf("growth counters = %+v", observed)
 	}
 }
 
@@ -302,9 +293,6 @@ func TestWorkspaceAssetGlobalSemaphoreCapsEightStreams(t *testing.T) {
 			return visit(bytes.NewReader([]byte("GIF89a-image")), 12)
 		},
 	})
-	counters := &gatee.Counters{}
-	server.measurements = counters
-
 	begin := make(chan struct{})
 	var ready sync.WaitGroup
 	var completed sync.WaitGroup
@@ -341,12 +329,6 @@ func TestWorkspaceAssetGlobalSemaphoreCapsEightStreams(t *testing.T) {
 	completed.Wait()
 	if got := len(server.assetPermits); got != 0 {
 		t.Fatalf("permits after completion = %d", got)
-	}
-	observed := counters.Snapshot()
-	if observed.ActiveAssetStreams != 0 ||
-		observed.MaximumAssetStreams != limits.MaxConcurrentImageStreams ||
-		observed.AssetStreamBytes != 9*uint64(len("GIF89a-image")) {
-		t.Fatalf("semaphore counters = %+v", observed)
 	}
 }
 

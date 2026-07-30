@@ -23,12 +23,7 @@ function isForbiddenSourcePath(path) {
   if (segments.includes("dist")) {
     return path !== "web/dist/placeholder.txt";
   }
-  return (
-    path === "spikes/selection-mapping/artifacts" ||
-    path.startsWith("spikes/selection-mapping/artifacts/") ||
-    path.endsWith(".coverprofile") ||
-    path.endsWith(".prof")
-  );
+  return path.endsWith(".coverprofile") || path.endsWith(".prof");
 }
 
 export function parseSourceManifest(contents) {

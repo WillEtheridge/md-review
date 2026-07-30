@@ -18,7 +18,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"mdreview.dev/mdreview/internal/filesystem"
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 )
 
@@ -60,32 +59,6 @@ func TestStoreReadMissingAndExistingSidecars(t *testing.T) {
 	}
 	if existing.Threads[0].Anchor.Range.Start != 0 {
 		t.Fatal("Read replaced the persisted original range")
-	}
-}
-
-func TestStoreMeasurementsCountMarkdownAndSidecarContentReads(t *testing.T) {
-	root := t.TempDir()
-	markdown := []byte("# measured\n")
-	sidecar := []byte("{\"schemaVersion\":1,\"threads\":[]}\n")
-	writeFile(t, root, "README.md", markdown, 0o644)
-	writeFile(t, root, "README.md.review.json", sidecar, 0o640)
-	counters := &gatee.Counters{}
-	options := deterministicStoreOptions()
-	options.Measurements = counters
-	store, err := NewStore(openFilesystem(t, root), options)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := store.Read(context.Background(), "README.md"); err != nil {
-		t.Fatal(err)
-	}
-	observed := counters.Snapshot()
-	if observed.MarkdownContentOpens != 1 ||
-		observed.MarkdownContentBytes != uint64(len(markdown)) ||
-		observed.SidecarContentOpens != 1 ||
-		observed.SidecarContentBytes != uint64(len(sidecar)) {
-		t.Fatalf("content counters = %+v", observed)
 	}
 }
 

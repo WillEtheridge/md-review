@@ -7,9 +7,8 @@ reporting process.
 ## Supported release
 
 Security support applies to the latest published mdReview v0.1 Linux `amd64`
-release. A candidate is not a supported release until its published release
-record includes a passing Gate E decision tied to its source and artifact
-hashes.
+release. A candidate is not a supported release until its source and packaged
+artifact checks pass and its release record includes the published checksums.
 
 Apple Silicon macOS builds remain previews until the exact downloaded artifact
 passes the documented physical-Mac check. Windows and Intel macOS are not

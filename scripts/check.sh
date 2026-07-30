@@ -31,16 +31,6 @@ while IFS= read -r -d '' SHELL_SCRIPT; do
   bash -n "${SHELL_SCRIPT}"
 done < <(find "${PROJECT_DIRECTORY}/scripts" -type f -name '*.sh' -print0)
 
-mapfile -d '' GATE_E_SCRIPTS < <(
-  find "${PROJECT_DIRECTORY}/scripts/gate-e" -type f -name '*.mjs' -print0 2>/dev/null
-)
-if ((${#GATE_E_SCRIPTS[@]} > 0)); then
-  for GATE_E_SCRIPT in "${GATE_E_SCRIPTS[@]}"; do
-    node --check "${GATE_E_SCRIPT}"
-  done
-  "${PROJECT_DIRECTORY}/web/node_modules/.bin/prettier" --check "${GATE_E_SCRIPTS[@]}"
-fi
-
 (
   cd "${PROJECT_DIRECTORY}"
   # web is both a Go embed package and an npm project. Explicit package roots

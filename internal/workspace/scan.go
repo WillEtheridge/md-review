@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"mdreview.dev/mdreview/internal/filesystem"
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 )
 
@@ -63,43 +62,6 @@ func scanWorkspace(
 			return directory.ReadFile(name, maxBytes)
 		},
 	)
-}
-
-func scanWorkspaceWithMeasurements(counters *gatee.Counters) scanFunction {
-	return func(
-		ctx context.Context,
-		gateway *filesystem.FS,
-		previousIgnoreFiles ignoreFileCache,
-	) (scanResult, error) {
-		return scanWorkspaceWithIgnoreReader(
-			ctx,
-			gateway,
-			previousIgnoreFiles,
-			func(
-				directory *filesystem.Directory,
-				name string,
-				maxBytes int64,
-			) ([]byte, error) {
-				data, err := directory.ReadFile(name, maxBytes)
-				counters.RecordGitignoreContentRead(len(data))
-				return data, err
-			},
-		)
-	}
-}
-
-func recordCompletedScans(scan scanFunction, counters *gatee.Counters) scanFunction {
-	return func(
-		ctx context.Context,
-		gateway *filesystem.FS,
-		previousIgnoreFiles ignoreFileCache,
-	) (scanResult, error) {
-		result, err := scan(ctx, gateway, previousIgnoreFiles)
-		if err == nil {
-			counters.RecordCompleteWorkspaceScan()
-		}
-		return result, err
-	}
 }
 
 func scanWorkspaceWithIgnoreReader(

@@ -18,7 +18,6 @@ import (
 
 	"mdreview.dev/mdreview/internal/cli"
 	"mdreview.dev/mdreview/internal/filesystem"
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/review"
 	"mdreview.dev/mdreview/internal/server"
 	"mdreview.dev/mdreview/internal/skillassets"
@@ -105,13 +104,7 @@ func runServe(
 	}
 	defer listener.Close()
 
-	var measurements *gatee.Counters
-	if os.Getenv(gatee.EnvironmentVariable) == "1" {
-		measurements = &gatee.Counters{}
-	}
-	indexedWorkspace, err := workspace.Open(canonicalRoot, workspace.Options{
-		Measurements: measurements,
-	})
+	indexedWorkspace, err := workspace.Open(canonicalRoot, workspace.Options{})
 	if err != nil {
 		return fmt.Errorf("open workspace: %w", err)
 	}
@@ -122,9 +115,7 @@ func runServe(
 		return fmt.Errorf("open review filesystem: %w", err)
 	}
 	defer reviewFilesystem.Close()
-	reviewStore, err := review.NewStore(reviewFilesystem, review.StoreOptions{
-		Measurements: measurements,
-	})
+	reviewStore, err := review.NewStore(reviewFilesystem, review.StoreOptions{})
 	if err != nil {
 		return fmt.Errorf("open review store: %w", err)
 	}
@@ -135,11 +126,10 @@ func runServe(
 	}
 	boundHost := listener.Addr().String()
 	handler, err := server.New(server.Config{
-		Assets:       application.web,
-		Workspace:    indexedWorkspace,
-		Review:       reviewStore,
-		BoundHost:    boundHost,
-		Measurements: measurements,
+		Assets:    application.web,
+		Workspace: indexedWorkspace,
+		Review:    reviewStore,
+		BoundHost: boundHost,
 	})
 	if err != nil {
 		return fmt.Errorf("configure HTTP server: %w", err)

@@ -20,7 +20,6 @@ import (
 	"unicode/utf8"
 
 	"mdreview.dev/mdreview/internal/filesystem"
-	"mdreview.dev/mdreview/internal/gatee"
 	"mdreview.dev/mdreview/internal/limits"
 )
 
@@ -29,10 +28,6 @@ type Options struct {
 	// Now supplies scan freshness time and may be called concurrently.
 	// Production callers leave it nil.
 	Now func() time.Time
-
-	// Measurements records Gate E counters when the compiled baseline opts in.
-	// Ordinary production callers leave it nil.
-	Measurements *gatee.Counters
 }
 
 // EntryKind identifies a navigation node.
@@ -205,7 +200,6 @@ type Service struct {
 	now     func() time.Time
 	scan    scanFunction
 	scanMu  contextMutex
-	metrics *gatee.Counters
 
 	// stateMu protects the complete published index, ignore cache, successful
 	// scan time, and last ordinary scan failure. Filesystem scanning happens
@@ -221,11 +215,7 @@ type Service struct {
 
 // Open canonicalises root, opens its filesystem gateway, and builds revision one.
 func Open(root string, options Options) (*Service, error) {
-	scan := scanWorkspace
-	if options.Measurements != nil {
-		scan = scanWorkspaceWithMeasurements(options.Measurements)
-	}
-	return openWithScanner(root, options, scan)
+	return openWithScanner(root, options, scanWorkspace)
 }
 
 func openWithScanner(
@@ -246,9 +236,6 @@ func openWithScanner(
 		_ = gateway.Close()
 		return nil, errors.New("workspace scanner is required")
 	}
-	if options.Measurements != nil {
-		scan = recordCompletedScans(scan, options.Measurements)
-	}
 	result, err := scan(context.Background(), gateway, nil)
 	if err != nil {
 		_ = gateway.Close()
@@ -260,7 +247,6 @@ func openWithScanner(
 		now:                now,
 		scan:               scan,
 		scanMu:             newContextMutex(),
-		metrics:            options.Measurements,
 		snapshot:           result.snapshot,
 		documents:          result.documents,
 		ignoreFiles:        result.ignoreFiles,
@@ -389,7 +375,6 @@ func (service *Service) ReadDocument(
 	}
 
 	source, err := service.gateway.ReadFile(relativePath, limits.MaxMarkdownDocumentBytes)
-	service.metrics.RecordMarkdownContentRead(len(source))
 	if err != nil {
 		return DocumentContent{}, classifyDocumentReadError(relativePath, err)
 	}
