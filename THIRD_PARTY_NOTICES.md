@@ -1,6 +1,6 @@
 # Third-Party Asset and Licence Policy
 
-**Status:** Milestone 1 direct-runtime inventory; release notices are generated from the final artifact  
+**Status:** Current direct-runtime inventory; release notices are generated from the final artifact
 **Scope:** bundled third-party assets and release requirements
 
 mdReview embeds its production browser bundle, fonts, and Agent Skill into one
@@ -17,10 +17,9 @@ embedded runtime assets unless the build output actually contains them.
 | Component | Purpose | Licence action |
 | --- | --- | --- |
 | Preact | Browser UI runtime | Retain its MIT licence notice with the release |
-| unified and remark/rehype packages | Markdown parsing, GFM, raw-HTML processing, sanitisation, and highlighting | Retain their MIT licence notices with the release |
+| unified and remark/rehype packages | Markdown parsing, GFM, raw-HTML processing, and sanitisation | Retain their MIT licence notices with the release |
 | decode-named-character-reference | Markdown character-reference decoding | Retain its MIT licence notice with the release |
 | go-git v5 `gitignore` package | Git-compatible ignore matching | Retain its Apache-2.0 licence and required notices with the release |
-| `golang.org/x/sys` | Linux descriptor, locking, and process system calls | Retain its BSD-3-Clause licence notice with the release |
 | mdReview source | Application code | Retain the project's MIT licence with the release |
 
 Transitive modules and browser packages remain subject to the final
@@ -29,7 +28,7 @@ replace that release check.
 
 ## Bundled fonts
 
-Milestone 4 bundles these complete, unmodified upstream webfonts:
+mdReview bundles these complete, unmodified upstream webfonts:
 
 - [PT Serif](https://github.com/google/fonts/tree/main/ofl/ptserif)
   `main@7ff85c87f93ea6cca5f41c69f2e4edcb90240f26`;

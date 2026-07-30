@@ -1,8 +1,7 @@
 # Bundled fonts
 
-mdReview bundles complete, unmodified webfonts from their official upstream sources frozen by the
-Milestone 4 contract. The files are checked in so development, tests, and release builds never
-download runtime fonts.
+mdReview bundles complete, unmodified webfonts from their official upstream sources. The files are
+checked in so development, tests, and release builds never download runtime fonts.
 
 | Family         | Revision                                        | Commit                                     | Official source                                                                                                        |
 | -------------- | ----------------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |

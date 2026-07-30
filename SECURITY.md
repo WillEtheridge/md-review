@@ -1,139 +1,159 @@
 # Security policy
 
-mdReview reads and writes repository data from a local browser interface. This
-document describes the current security boundary, known limitations, and private
-reporting process.
+This document defines the security boundary for mdReview.
 
 ## Supported release
 
-Security support applies to the latest published mdReview v0.1 Linux `amd64`
-release. A candidate is not a supported release until its source and packaged
-artifact checks pass and its release record includes the published checksums.
+Security support applies to the latest published `v0.2.0-preview.1` release for:
 
-Apple Silicon macOS builds remain previews until the exact downloaded artifact
-passes the documented physical-Mac check. Windows and Intel macOS are not
-supported.
+- Linux `amd64`;
+- Apple silicon macOS (`arm64`).
 
-## Report a vulnerability privately
+Windows and Intel macOS are not supported.
 
-Do not open a public issue, discussion, pull request, or review comment with
-vulnerability details.
+## Report a vulnerability
 
-Use this repository host's private security-reporting or private security
-advisory feature when it is available. Include the affected release checksum,
-operating-system environment, reproduction steps, expected and observed behaviour, and
-the minimum files needed to demonstrate the issue. Remove private Markdown,
-sidecars, user names, and absolute paths unless they are
-essential to the report.
+Do not put vulnerability details in a public issue, discussion, pull request, or review comment.
 
-If the repository host does not offer a private reporting feature, do not
-publish the details. Use a private maintainer contact exposed by that host or
-the published release metadata. This repository does not invent or embed an
-unverified security email address.
+Use the repository host's private security-reporting feature. Include:
 
-## Trust boundary
+- the release version and checksum;
+- the operating system;
+- the steps to reproduce the problem;
+- the expected and actual results;
+- the minimum files necessary to show the problem.
 
-mdReview is a foreground, loopback-only Linux and Apple Silicon macOS
-application intended for single-user machines. It is not a sandbox, remote
-service, or multi-user collaboration system.
+Remove private Markdown, sidecars, user names, and absolute paths unless they are necessary.
 
-- The server binds to `127.0.0.1`.
-- Browser mutations additionally require the exact allowed origin and a JSON
-  content type.
-- Exact Host validation, no CORS opt-in, CSP, referrer policy, content-type
-  restrictions, structural Markdown sanitisation, and safe link policies
-  reduce browser-origin attacks.
-- Runtime browser assets and fonts are embedded. Ordinary use sends no
-  telemetry, analytics, crash reports, remote fonts, or source-authored remote
-  content requests.
+If the repository host has no private reporting feature, use a private maintainer contact that the
+host or release metadata publishes. This repository does not publish an unverified security email
+address.
 
-Loopback binding and exact `Host` validation prevent remote and DNS-rebinding
-access. Exact mutation `Origin` checks and JSON-only bodies prevent ordinary
-cross-origin browser writes. The API has no access token: any local process or
-user able to connect to the port can read it, and local software can forge
-browser headers. Treat all users and processes on the machine as inside mdReview's
-network trust boundary. Do not publish mdReview through a reverse proxy, port
-forward, container ingress, or remote host.
+## Threat model
 
-## Filesystem and write boundary
+mdReview is a foreground application for one user on one computer. It is not a remote service,
+sandbox, or multi-user collaboration system.
 
-Workspace operations begin at a canonical absolute root and use one portable
-Go path implementation. Traversal, absolute client paths, symlinked workspace
-files and directories, and special files are rejected. Reads are bounded and
-paths are rechecked immediately before access.
+The security controls defend project data against:
 
-This is an application boundary under an ordinarily stable local namespace,
-not a kernel capability sandbox. A process running as the same user can race a
-check by replacing a path component before the subsequent ordinary path-based
-access. That actor is inside the trust model because it can already read,
-replace, and execute repository files.
+- a remote network client;
+- a malicious website in the user's browser;
+- invalid or hostile data in Markdown, sidecars, image files, browser requests, and `.gitignore`
+  files.
 
-The browser API writes only the adjacent sidecar derived from a Markdown
-document in the current index. A client cannot provide an arbitrary
-filesystem destination, and mdReview does not write Markdown, images, or other
-repository files.
+The controls do not defend project data against:
 
-Raw Markdown, sidecars, browser requests, images, and `.gitignore` files are
-untrusted. Reads, requests, fields, and retained encoded image blobs are
-bounded. Invalid, ambiguous, duplicate-key, duplicate-ID, unsupported-version,
-unsafe, or oversized sidecars remain read-only and are not repaired.
+- another process that runs as the same user;
+- an administrator or root process;
+- a person with physical access to an unlocked account;
+- a malicious browser extension with suitable local access.
 
-## Sidecar concurrency limitation
+A process that runs as the same user can already read, change, and execute files in the project.
+mdReview does not use filesystem operations as a security boundary against that process.
 
-Browser mutations are semantic, bounded, and serialised within the process.
-Each operation requires the exact Markdown and sidecar revisions the browser
-read; if either changed, the operation is rejected without merging. A single
-same-directory temporary file is synced, the destination revision is checked,
-and complete valid JSON is atomically renamed.
+## Network boundary
 
-Direct external writers, including coding agents, do not participate in the
-application's lock. An external replacement in the final
-revision-check-to-rename interval may still be overwritten. This residual race
-is not solved, and mdReview does not provide lossless uncoordinated
-multi-writer collaboration.
+mdReview:
 
-Use a sequential workflow: finish browser comments, stop making browser
-mutations, ask the agent to edit the Markdown and sidecars, then reload and
-verify before resolving threads. Atomic rename prevents partial JSON; it does
-not make simultaneous external edits transactional.
+- binds only to `127.0.0.1`;
+- validates the exact `Host` header;
+- requires the expected `Origin` for browser mutations;
+- accepts JSON only for mutation requests;
+- does not enable cross-origin resource sharing;
+- sends a restrictive content security policy and other browser security headers.
 
-If writing, syncing, or closing the temporary sidecar fails, the destination
-remains untouched. A successful atomic rename prevents partial JSON during
-ordinary operation. mdReview does not sync the containing directory or promise
-survival across sudden power loss or operating-system failure.
+These controls stop normal remote access, DNS-rebinding access, and cross-origin browser writes.
 
-## Agent and lifecycle boundaries
+The API has no access token. A local process that can connect to the loopback port can read the API.
+A local process can also make headers that look like browser headers. Such processes are inside the
+trust boundary.
 
-The sidecar is the agent integration surface. mdReview does not deliver
-comments automatically, invoke a model, expose an MCP server, or provide an
-agent-facing comment API.
+Do not expose mdReview through a reverse proxy, port forward, container ingress, or remote host.
 
-An agent may append a reply and set a successfully addressed `open` thread to
-`handled`. Only the human reviewer marks a thread `resolved`.
+## Filesystem boundary
 
-Every instance is an independent foreground process. The terminal or agent
-host that launches it owns and stops it; mdReview does not infer agent sessions,
-inspect terminal topology, or register parent-death behaviour.
+Workspace operations start at one canonical absolute root. The filesystem gateway:
+
+- accepts workspace-relative paths only;
+- rejects traversal and absolute client paths;
+- rejects symlinked workspace files and directories;
+- rejects special files;
+- checks paths again immediately before access;
+- applies size limits to reads and writes.
+
+The server derives the sidecar path from an indexed Markdown document. A browser client cannot
+select an arbitrary write destination. mdReview does not write Markdown, images, or other project
+files.
+
+This is a portable application boundary, not a kernel capability sandbox. A same-user process can
+replace a checked path component before the next path-based operation. That process is inside the
+trust boundary.
+
+mdReview rejects invalid, ambiguous, duplicate-key, duplicate-ID, unsupported-version, unknown,
+unsafe, and oversized sidecars. It does not repair or overwrite them.
+
+## Sidecar writes and conflicts
+
+Each browser mutation includes the Markdown revision and sidecar revision that the browser read.
+mdReview rejects the mutation if either revision changed. It does not merge concurrent sidecar
+changes.
+
+Within one process, mdReview serialises mutations. For a write, it:
+
+1. writes complete valid JSON to a temporary sibling file;
+2. syncs and closes that file;
+3. checks the destination revision;
+4. atomically renames the temporary file.
+
+An external writer, including a coding agent or another mdReview process, does not use the same
+lock. It can replace the sidecar between the final revision check and the rename. mdReview can then
+overwrite that external change. This race is not solved.
+
+Use a sequential workflow:
+
+1. Finish browser comments.
+2. Stop browser mutations.
+3. Ask the agent to change the Markdown and sidecar.
+4. Reload mdReview.
+5. Verify the result before you resolve threads.
+
+Atomic rename prevents partial JSON during ordinary operation. It does not make independent writers
+transactional. mdReview does not promise survival across sudden power loss or operating-system
+failure.
+
+## Agent and process boundary
+
+The sidecar is the complete agent integration surface. mdReview does not:
+
+- invoke a model;
+- send comments to an agent;
+- expose an MCP server;
+- expose an agent comment API.
+
+An agent can append a reply and set completed work to `handled`. Only the human reviewer sets a
+thread to `resolved`.
+
+Each mdReview invocation is an independent foreground process. The terminal or agent that starts
+the process owns it and stops it. mdReview has no daemon, process registry, parent-process
+inspection, or parent-death handling.
+
+## Privacy
+
+The release embeds its browser files and fonts. Ordinary use sends no telemetry, analytics, crash
+reports, remote fonts, or source-authored remote content requests.
+
+Installing source dependencies can use the network. Opening an external link can use the network.
 
 ## Out of scope
 
-mdReview is not designed or certified for:
+mdReview is not designed for:
 
-- remote hosting, reverse proxies, or internet exposure;
-- several Unix users sharing one writable worktree;
-- accounts, permissions, or real-time collaboration;
-- Windows, Intel macOS, mobile, or responsive layouts;
-- daemon, tray, or unattended service operation;
-- active SVG, MDX, Mermaid, mathematics, or renderer plugins;
+- remote hosting;
+- multiple operating-system users in one writable project;
+- accounts or access control;
+- real-time collaboration;
+- race-free external sidecar editing;
 - browser-side Markdown editing;
-- fuzzy anchor recovery; or
-- race-free direct external sidecar editing.
-
-Source dependency installation and a user choosing an external link may use
-the network. The released application itself has no Node.js runtime
-dependency. Browser-internal decoded-image memory is not bounded by the
-application's encoded-blob budget.
-
-The authoritative design and accepted residual risks are maintained in the
-local development record. Exact release evidence and any candidate-specific
-limitations belong in the separately published release record.
+- fuzzy anchor recovery;
+- active SVG, MDX, Mermaid, mathematics, or renderer plug-ins;
+- daemon, tray, or unattended service operation.

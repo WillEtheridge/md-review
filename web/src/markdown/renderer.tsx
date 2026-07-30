@@ -261,8 +261,8 @@ function makeMediaInert(element: Element): void {
       : "Image omitted"
     : "Embedded media omitted";
 
-  // No source-authored media URL survives into the render tree. Milestone 5
-  // may replace this only after authenticated contained asset loading exists.
+  // No source-authored media URL survives into the render tree. The validated
+  // local image path is added separately after sanitisation.
   element.tagName = "span";
   element.properties = {
     className: ["markdown-media-placeholder"],
