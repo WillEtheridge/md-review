@@ -32,8 +32,6 @@
 0644 internal/review/store.go
 0644 internal/review/store_mutation.go
 0644 internal/review/store_test.go
-0644 internal/review/testdata/lossless.json
-0644 internal/review/value.go
 0644 internal/server/asset.go
 0644 internal/server/asset_test.go
 0644 internal/server/m3_route_test.go

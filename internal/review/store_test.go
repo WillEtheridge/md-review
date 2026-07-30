@@ -498,40 +498,6 @@ func TestStoreScopesIdenticalIDsToEachDerivedSidecar(t *testing.T) {
 	}
 }
 
-func TestStorePreservesExternalUnknownValuesDuringCreation(t *testing.T) {
-	root := t.TempDir()
-	markdown := []byte("# title\n")
-	writeFile(t, root, "README.md", markdown, 0o644)
-	fixture := losslessFixture(t)
-	writeFile(t, root, "README.md.review.json", fixture, 0o640)
-	store := deterministicStore(t, openFilesystem(t, root))
-
-	if _, err := store.CreateThread(context.Background(), CreateThreadInput{
-		DocumentPath:             "README.md",
-		ExpectedDocumentRevision: Revision(markdown),
-		ExpectedReviewRevision:   ptr(Revision(fixture)),
-		Anchor:                   Anchor{Type: AnchorDocument},
-		MessageBody:              "New feedback.",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	result, err := os.ReadFile(filepath.Join(root, "README.md.review.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Contains(result, []byte("9007199254740993123456789")) {
-		t.Fatal("arbitrary-precision unknown number was lost")
-	}
-	before, _ := parseJSON(fixture)
-	after, _ := parseJSON(result)
-	assertBytesEqual(
-		t,
-		"external root field",
-		mustChild(t, before, "futureRoot").raw,
-		mustChild(t, after, "futureRoot").raw,
-	)
-}
-
 func TestStoreTranslatesFilesystemMutationOutcomes(t *testing.T) {
 	markdown := []byte("# title\n")
 	validSidecarBytes := []byte(`{"schemaVersion":1,"threads":[]}`)
@@ -599,6 +565,19 @@ func TestStoreRejectsUnsafeAndInvalidExistingSidecarsWithoutOverwrite(t *testing
 			want: ErrInvalid,
 		},
 		{
+			name: "unknown field",
+			prepare: func(t *testing.T, root string) {
+				writeFile(
+					t,
+					root,
+					"README.md.review.json",
+					[]byte(`{"schemaVersion":1,"threads":[],"future":true}`),
+					0o640,
+				)
+			},
+			want: ErrInvalid,
+		},
+		{
 			name: "unsupported",
 			prepare: func(t *testing.T, root string) {
 				writeFile(t, root, "README.md.review.json", []byte(`{"schemaVersion":9,"threads":[]}`), 0o640)
@@ -643,38 +622,6 @@ func TestStoreRejectsUnsafeAndInvalidExistingSidecarsWithoutOverwrite(t *testing
 			assertBytesEqual(t, "rejected sidecar", before, after)
 		})
 	}
-}
-
-func TestStoreRejectsOversizedResultWithoutChangingSidecar(t *testing.T) {
-	root := t.TempDir()
-	markdown := []byte("# title\n")
-	writeFile(t, root, "README.md", markdown, 0o644)
-	prefix := `{"schemaVersion":1,"threads":[],"padding":"`
-	suffix := `"}`
-	paddingSize := int(limits.MaxReviewSidecarBytes) - len(prefix) - len(suffix) - 16
-	sidecar := []byte(prefix + strings.Repeat("x", paddingSize) + suffix)
-	if int64(len(sidecar)) >= limits.MaxReviewSidecarBytes {
-		t.Fatalf("fixture size = %d", len(sidecar))
-	}
-	writeFile(t, root, "README.md.review.json", sidecar, 0o640)
-	store := deterministicStore(t, openFilesystem(t, root))
-	reviewRevision := Revision(sidecar)
-
-	_, err := store.CreateThread(context.Background(), CreateThreadInput{
-		DocumentPath:             "README.md",
-		ExpectedDocumentRevision: Revision(markdown),
-		ExpectedReviewRevision:   &reviewRevision,
-		Anchor:                   Anchor{Type: AnchorDocument},
-		MessageBody:              "This pushes the result over the limit.",
-	})
-	if !errors.Is(err, ErrTooLarge) {
-		t.Fatalf("CreateThread error = %v, want ErrTooLarge", err)
-	}
-	result, readErr := os.ReadFile(filepath.Join(root, "README.md.review.json"))
-	if readErr != nil {
-		t.Fatal(readErr)
-	}
-	assertBytesEqual(t, "sidecar after oversized mutation", sidecar, result)
 }
 
 func TestRandomIDUsesTypePrefixAnd128RandomBits(t *testing.T) {

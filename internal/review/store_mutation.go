@@ -2,7 +2,6 @@ package review
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 	"unicode/utf8"
@@ -190,27 +189,25 @@ func validateMessageBody(body string) error {
 	return nil
 }
 
-func (document *Document) findThreadNode(threadID string) (int, *value, bool) {
+func (document *Document) findThread(threadID string) (int, bool) {
 	for index := range document.threads {
 		if document.threads[index].ID == threadID {
-			return index, document.threadsNode.items[index], true
+			return index, true
 		}
 	}
-	return 0, nil, false
+	return 0, false
 }
 
-func (document *Document) findMessageNode(messageID string) (int, int, *value, *value, bool) {
+func (document *Document) findMessage(messageID string) (int, int, bool) {
 	for threadIndex, thread := range document.threads {
 		for messageIndex, message := range thread.Messages {
 			if message.ID != messageID {
 				continue
 			}
-			threadNode := document.threadsNode.items[threadIndex]
-			messagesNode, _ := threadNode.get("messages")
-			return threadIndex, messageIndex, threadNode, messagesNode.items[messageIndex], true
+			return threadIndex, messageIndex, true
 		}
 	}
-	return 0, 0, nil, nil, false
+	return 0, 0, false
 }
 
 func (document *Document) threadIDForMessage(messageID string) (string, bool) {
@@ -225,7 +222,7 @@ func (document *Document) threadIDForMessage(messageID string) (string, bool) {
 }
 
 func (document *Document) appendReply(threadID string, message Message) error {
-	threadIndex, threadNode, ok := document.findThreadNode(threadID)
+	threadIndex, ok := document.findThread(threadID)
 	if !ok {
 		return fmt.Errorf("%w: thread %q does not exist", ErrInvalidOperation, threadID)
 	}
@@ -244,32 +241,12 @@ func (document *Document) appendReply(threadID string, message Message) error {
 	if err := validateThreadModel(thread); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("encode reply: %w", err)
-	}
-	messageNode, err := parseJSON(raw)
-	if err != nil {
-		return fmt.Errorf("parse encoded reply: %w", err)
-	}
-	messageNode.markTreeDirty()
-	messagesNode, _ := threadNode.get("messages")
-	messagesNode.items = append(messagesNode.items, messageNode)
-	messagesNode.markDirty()
-	if thread.Status != document.threads[threadIndex].Status {
-		if err := replaceObjectString(threadNode, "status", string(thread.Status)); err != nil {
-			return err
-		}
-	}
-	threadNode.markDirty()
-	document.threadsNode.markDirty()
-	document.root.markDirty()
 	document.threads[threadIndex] = thread
 	return nil
 }
 
 func (document *Document) editHumanMessage(messageID, body, editedAt string) (string, error) {
-	threadIndex, messageIndex, threadNode, messageNode, ok := document.findMessageNode(messageID)
+	threadIndex, messageIndex, ok := document.findMessage(messageID)
 	if !ok {
 		return "", fmt.Errorf("%w: message %q does not exist", ErrInvalidOperation, messageID)
 	}
@@ -285,24 +262,12 @@ func (document *Document) editHumanMessage(messageID, body, editedAt string) (st
 	if err := validateThreadModel(thread); err != nil {
 		return "", err
 	}
-	if err := replaceObjectString(messageNode, "body", body); err != nil {
-		return "", err
-	}
-	if err := replaceObjectString(messageNode, "editedAt", editedAt); err != nil {
-		return "", err
-	}
-	messageNode.markDirty()
-	messagesNode, _ := threadNode.get("messages")
-	messagesNode.markDirty()
-	threadNode.markDirty()
-	document.threadsNode.markDirty()
-	document.root.markDirty()
 	document.threads[threadIndex] = thread
 	return thread.ID, nil
 }
 
 func (document *Document) changeThreadStatus(threadID string, status ThreadStatus) error {
-	threadIndex, threadNode, ok := document.findThreadNode(threadID)
+	threadIndex, ok := document.findThread(threadID)
 	if !ok {
 		return fmt.Errorf("%w: thread %q does not exist", ErrInvalidOperation, threadID)
 	}
@@ -311,50 +276,18 @@ func (document *Document) changeThreadStatus(threadID string, status ThreadStatu
 	if !allowed {
 		return fmt.Errorf("%w: cannot change thread status from %q to %q", ErrInvalidOperation, current, status)
 	}
-	if err := replaceObjectString(threadNode, "status", string(status)); err != nil {
-		return err
-	}
-	threadNode.markDirty()
-	document.threadsNode.markDirty()
-	document.root.markDirty()
 	document.threads[threadIndex].Status = status
 	return nil
 }
 
 func (document *Document) deleteUnrepliedThread(threadID string) error {
-	threadIndex, _, ok := document.findThreadNode(threadID)
+	threadIndex, ok := document.findThread(threadID)
 	if !ok {
 		return fmt.Errorf("%w: thread %q does not exist", ErrInvalidOperation, threadID)
 	}
 	if len(document.threads[threadIndex].Messages) != 1 {
 		return fmt.Errorf("%w: a thread with replies cannot be deleted", ErrInvalidOperation)
 	}
-	document.threadsNode.items = append(document.threadsNode.items[:threadIndex], document.threadsNode.items[threadIndex+1:]...)
 	document.threads = append(document.threads[:threadIndex], document.threads[threadIndex+1:]...)
-	document.threadsNode.markDirty()
-	document.root.markDirty()
-	return nil
-}
-
-func replaceObjectString(object *value, name, replacement string) error {
-	raw, err := json.Marshal(replacement)
-	if err != nil {
-		return fmt.Errorf("encode %s: %w", name, err)
-	}
-	replacementNode, err := parseJSON(raw)
-	if err != nil {
-		return fmt.Errorf("parse encoded %s: %w", name, err)
-	}
-	for index := range object.members {
-		if object.members[index].key == name {
-			object.members[index].value = replacementNode
-			return nil
-		}
-	}
-	keyRaw, err := json.Marshal(name)
-	if err != nil {
-		return fmt.Errorf("encode member %s: %w", name, err)
-	}
-	object.members = append(object.members, member{key: name, keyRaw: keyRaw, value: replacementNode})
 	return nil
 }

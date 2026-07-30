@@ -14,20 +14,8 @@ import (
 	"mdreview.dev/mdreview/internal/limits"
 )
 
-func TestDecodeAndAppendPreserveUnknownRawValuesAndLargeNumbers(t *testing.T) {
-	input := losslessFixture(t)
-	before, err := parseJSON(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	futureRootBefore := mustChild(t, before, "futureRoot")
-	threadsBefore := mustChild(t, before, "threads")
-	futureThreadBefore := mustChild(t, threadsBefore.items[0], "futureThread")
-	anchorBefore := mustChild(t, threadsBefore.items[0], "anchor")
-	futureAnchorBefore := mustChild(t, anchorBefore, "futureAnchor")
-	messageBefore := mustChild(t, mustChild(t, threadsBefore.items[0], "messages").items[0], "futureMessage")
-
-	document, err := Decode(input)
+func TestDecodeAndAppendEmitsCanonicalTypedJSON(t *testing.T) {
+	document, err := Decode([]byte(`{"schemaVersion":1,"threads":[]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,29 +27,12 @@ func TestDecodeAndAppendPreserveUnknownRawValuesAndLargeNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !json.Valid(output) {
-		t.Fatal("mutation output is not valid JSON")
+	if !bytes.HasSuffix(output, []byte("\n")) {
+		t.Fatal("output must end with a newline")
 	}
-	if !bytes.Contains(output, []byte("9007199254740993123456789")) {
-		t.Fatal("large unknown integer lexeme was not preserved")
+	if !bytes.HasPrefix(output, []byte("{\n  \"schemaVersion\": 1,")) {
+		t.Fatalf("output is not indented JSON: %s", output)
 	}
-
-	after, err := parseJSON(output)
-	if err != nil {
-		t.Fatal(err)
-	}
-	futureRootAfter := mustChild(t, after, "futureRoot")
-	threadsAfter := mustChild(t, after, "threads")
-	futureThreadAfter := mustChild(t, threadsAfter.items[0], "futureThread")
-	anchorAfter := mustChild(t, threadsAfter.items[0], "anchor")
-	futureAnchorAfter := mustChild(t, anchorAfter, "futureAnchor")
-	messageAfter := mustChild(t, mustChild(t, threadsAfter.items[0], "messages").items[0], "futureMessage")
-
-	assertBytesEqual(t, "root extension", futureRootBefore.raw, futureRootAfter.raw)
-	assertBytesEqual(t, "thread extension", futureThreadBefore.raw, futureThreadAfter.raw)
-	assertBytesEqual(t, "anchor extension", futureAnchorBefore.raw, futureAnchorAfter.raw)
-	assertBytesEqual(t, "message extension", messageBefore.raw, messageAfter.raw)
-
 	second, err := document.Bytes()
 	if err != nil {
 		t.Fatal(err)
@@ -75,11 +46,11 @@ func TestDecodeRejectsRecursiveDuplicateKeysAndDuplicateIDs(t *testing.T) {
 		input string
 	}{
 		{"duplicate root key", `{"schemaVersion":1,"schemaVersion":1,"threads":[]}`},
-		{"duplicate nested key", `{"schemaVersion":1,"threads":[],"future":{"x":1,"x":2}}`},
-		{"duplicate key in array", `{"schemaVersion":1,"threads":[],"future":[{"x":1,"x":2}]}`},
+		{"duplicate nested key", validSidecar(`{"id":"thread","anchor":{"type":"text","range":{"start":0,"start":0,"end":1},"source":"x","text":"x"},"status":"open","messages":[` + validMessage("message") + `]}`)},
+		{"duplicate key in array", validSidecar(`{"id":"thread","anchor":{"type":"document"},"status":"open","messages":[{"id":"message","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"2026-07-28T12:00:00Z","createdAt":"2026-07-28T12:00:00Z"}]}`)},
 		{
 			"escaped duplicate key",
-			`{"schemaVersion":1,"threads":[],"future":{"x":1,"\u0078":2}}`,
+			validSidecar(`{"id":"thread","anchor":{"type":"text","range":{"start":0,"end":1},"source":"x","text":"x"},"status":"open","messages":[{"id":"message","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"2026-07-28T12:00:00Z","\u0063reatedAt":"2026-07-28T12:00:00Z"}]}`),
 		},
 		{
 			"duplicate thread ID",
@@ -130,6 +101,10 @@ func TestDecodeValidatesCompleteSchemaVersionOneSemantics(t *testing.T) {
 		{"unsupported schema", `{"schemaVersion":2,"threads":[]}`, true},
 		{"missing threads", `{"schemaVersion":1}`, false},
 		{"threads not array", `{"schemaVersion":1,"threads":{}}`, false},
+		{"unknown root field", `{"schemaVersion":1,"threads":[],"future":true}`, false},
+		{"unknown thread field", validSidecar(`{"id":"t","anchor":{"type":"document"},"status":"open","messages":[` + validMessage("m") + `],"future":true}`), false},
+		{"case-mismatched field", `{"schemaVersion":1,"Threads":[]}`, false},
+		{"multiple JSON values", `{"schemaVersion":1,"threads":[]} {}`, false},
 		{"thread not object", validSidecar(`[]`), false},
 		{"missing thread ID", validSidecar(`{"anchor":{"type":"document"},"status":"open","messages":[` + validMessage("m") + `]}`), false},
 		{"empty thread ID", validSidecar(`{"id":"","anchor":{"type":"document"},"status":"open","messages":[` + validMessage("m") + `]}`), false},
@@ -153,6 +128,8 @@ func TestDecodeValidatesCompleteSchemaVersionOneSemantics(t *testing.T) {
 		{"invalid created timestamp", validSidecar(`{"id":"t","anchor":{"type":"document"},"status":"open","messages":[{"id":"m","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"today"}]}`), false},
 		{"non-UTC created timestamp", validSidecar(`{"id":"t","anchor":{"type":"document"},"status":"open","messages":[{"id":"m","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"2026-07-28T13:00:00+01:00"}]}`), false},
 		{"invalid edited timestamp", validSidecar(`{"id":"t","anchor":{"type":"document"},"status":"open","messages":[{"id":"m","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"2026-07-28T12:00:00Z","editedAt":"later"}]}`), false},
+		{"null edited timestamp", validSidecar(`{"id":"t","anchor":{"type":"document"},"status":"open","messages":[{"id":"m","author":{"type":"human","name":"Reviewer"},"body":"","createdAt":"2026-07-28T12:00:00Z","editedAt":null}]}`), false},
+		{"document anchor extra known field", validSidecar(`{"id":"t","anchor":{"type":"document","text":""},"status":"open","messages":[` + validMessage("m") + `]}`), false},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
@@ -232,11 +209,11 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 		t.Fatal(err)
 	}
 	var schema struct {
-		Schema string `json:"$schema"`
-		Defs   struct {
-			Thread struct {
-				Required []string `json:"required"`
-			} `json:"thread"`
+		Schema               string `json:"$schema"`
+		AdditionalProperties bool   `json:"additionalProperties"`
+		Defs                 map[string]struct {
+			Required             []string `json:"required"`
+			AdditionalProperties bool     `json:"additionalProperties"`
 		} `json:"$defs"`
 	}
 	if err := json.Unmarshal(schemaData, &schema); err != nil {
@@ -245,9 +222,18 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 	if schema.Schema != "https://json-schema.org/draft/2020-12/schema" {
 		t.Fatalf("schema draft = %q", schema.Schema)
 	}
+	thread := schema.Defs["thread"]
 	for _, required := range []string{"id", "anchor", "status", "messages"} {
-		if !contains(schema.Defs.Thread.Required, required) {
+		if !contains(thread.Required, required) {
 			t.Fatalf("published thread schema does not require %q", required)
+		}
+	}
+	if schema.AdditionalProperties {
+		t.Fatal("published root schema permits unknown fields")
+	}
+	for name, definition := range schema.Defs {
+		if definition.AdditionalProperties {
+			t.Fatalf("published %s schema permits unknown fields", name)
 		}
 	}
 
@@ -296,7 +282,6 @@ func TestPublishedSchemaAndSidecarFixturesMatchDomain(t *testing.T) {
 
 func FuzzDecodeDoesNotPanic(fuzz *testing.F) {
 	fuzz.Add([]byte(`{"schemaVersion":1,"threads":[]}`))
-	fuzz.Add(losslessFixtureForFuzz())
 	fuzz.Add([]byte(`{"schemaVersion":1,"threads":[],"x":{"duplicate":1,"duplicate":2}}`))
 	fuzz.Fuzz(func(t *testing.T, data []byte) {
 		if int64(len(data)) > limits.MaxReviewSidecarBytes+1 {
@@ -345,32 +330,6 @@ func quotedTestString(value string) string {
 		panic(err)
 	}
 	return string(raw)
-}
-
-func losslessFixture(t *testing.T) []byte {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "lossless.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
-}
-
-func losslessFixtureForFuzz() []byte {
-	data, err := os.ReadFile(filepath.Join("testdata", "lossless.json"))
-	if err != nil {
-		panic(err)
-	}
-	return data
-}
-
-func mustChild(t *testing.T, object *value, name string) *value {
-	t.Helper()
-	child, ok := object.get(name)
-	if !ok {
-		t.Fatalf("missing child %q", name)
-	}
-	return child
 }
 
 func assertBytesEqual(t *testing.T, name string, expected, actual []byte) {

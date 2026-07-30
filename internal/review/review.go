@@ -4,12 +4,14 @@
 package review
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
+	"io"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -136,15 +138,45 @@ type ResolvedThread struct {
 	Messages   []Message    `json:"messages"`
 }
 
-// Document is a validated, lossless schema-version-1 sidecar.
+// Document is a validated schema-version-1 sidecar.
 type Document struct {
-	root        *value
-	threadsNode *value
-	threads     []Thread
+	threads []Thread
 }
 
-// Decode validates a complete schema-version-1 sidecar while retaining raw
-// values for every unmutated field.
+type decodedSidecar struct {
+	SchemaVersion uint64       `json:"schemaVersion"`
+	Threads       *[]rawThread `json:"threads"`
+}
+
+type rawThread struct {
+	ID       string       `json:"id"`
+	Anchor   rawAnchor    `json:"anchor"`
+	Status   ThreadStatus `json:"status"`
+	Messages []rawMessage `json:"messages"`
+}
+
+type rawAnchor struct {
+	Type   AnchorType `json:"type"`
+	Range  *ByteRange `json:"range,omitempty"`
+	Source *string    `json:"source,omitempty"`
+	Text   *string    `json:"text,omitempty"`
+}
+
+type rawMessage struct {
+	ID        string          `json:"id"`
+	Author    Author          `json:"author"`
+	Body      *string         `json:"body"`
+	CreatedAt string          `json:"createdAt"`
+	EditedAt  json.RawMessage `json:"editedAt"`
+}
+
+var ownedJSONFieldNames = []string{
+	"schemaVersion", "threads", "id", "anchor", "status", "messages",
+	"type", "range", "source", "text", "start", "end", "author", "name",
+	"body", "createdAt", "editedAt",
+}
+
+// Decode validates one complete schema-version-1 sidecar.
 func Decode(data []byte) (*Document, error) {
 	if int64(len(data)) > limits.MaxReviewSidecarBytes {
 		return nil, ErrTooLarge
@@ -152,44 +184,50 @@ func Decode(data []byte) (*Document, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("%w: sidecar must be UTF-8", ErrInvalid)
 	}
-	root, err := parseJSON(data)
-	if err != nil {
+	if err := preflightJSON(data); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	if root.kind != objectValue {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("%w: root must be an object", ErrInvalid)
 	}
-
-	schemaNode, ok := root.get("schemaVersion")
-	if !ok || schemaNode.kind != numberValue {
+	schemaRaw, ok := root["schemaVersion"]
+	if !ok {
 		return nil, fmt.Errorf("%w: schemaVersion must be an integer", ErrInvalid)
 	}
-	version, err := exactUint(schemaNode, "schemaVersion")
-	if err != nil {
-		return nil, err
+	var version uint64
+	if err := json.Unmarshal(schemaRaw, &version); err != nil {
+		return nil, fmt.Errorf("%w: schemaVersion must be a non-negative integer", ErrInvalid)
 	}
 	if version != 1 {
 		return nil, fmt.Errorf("%w: %d", ErrUnsupportedSchema, version)
 	}
 
-	threadsNode, ok := root.get("threads")
-	if !ok || threadsNode.kind != arrayValue {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var decoded decodedSidecar
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if err := ensureDecoderEOF(decoder); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	if decoded.SchemaVersion != 1 || decoded.Threads == nil {
 		return nil, fmt.Errorf("%w: threads must be an array", ErrInvalid)
 	}
-	threads, err := validateThreads(threadsNode)
+	threads, err := decodedThreads(*decoded.Threads)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	return &Document{root: root, threadsNode: threadsNode, threads: threads}, nil
+	if err := validateThreads(threads); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalid, err)
+	}
+	return &Document{threads: threads}, nil
 }
 
 // NewDocument constructs an empty schema-version-1 sidecar.
 func NewDocument() *Document {
-	document, err := Decode([]byte(`{"schemaVersion":1,"threads":[]}`))
-	if err != nil {
-		panic(err)
-	}
-	return document
+	return &Document{threads: []Thread{}}
 }
 
 // Revision returns the SHA-256 revision of exact document or sidecar bytes.
@@ -219,8 +257,7 @@ func (document *Document) ResolvedThreads(markdown []byte) []ResolvedThread {
 	return result
 }
 
-// AppendThread adds a fully validated thread while preserving all existing
-// fields and value lexemes.
+// AppendThread adds a fully validated thread.
 func (document *Document) AppendThread(thread Thread) error {
 	if err := validateThreadModel(thread); err != nil {
 		return err
@@ -238,28 +275,23 @@ func (document *Document) AppendThread(thread Thread) error {
 		}
 	}
 
-	raw, err := json.Marshal(thread)
-	if err != nil {
-		return fmt.Errorf("encode new thread: %w", err)
-	}
-	node, err := parseJSON(raw)
-	if err != nil {
-		return fmt.Errorf("parse encoded thread: %w", err)
-	}
-	node.markTreeDirty()
-	document.threadsNode.items = append(document.threadsNode.items, node)
-	document.threadsNode.markDirty()
-	document.root.markDirty()
 	document.threads = append(document.threads, cloneThread(thread))
 	return nil
 }
 
 // Bytes returns deterministic valid JSON and rejects an oversized result.
 func (document *Document) Bytes() ([]byte, error) {
-	result, err := document.root.bytes()
+	if err := validateThreads(document.threads); err != nil {
+		return nil, fmt.Errorf("validate emitted sidecar: %w", err)
+	}
+	result, err := json.MarshalIndent(struct {
+		SchemaVersion uint64   `json:"schemaVersion"`
+		Threads       []Thread `json:"threads"`
+	}{SchemaVersion: 1, Threads: document.threads}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
+	result = append(result, '\n')
 	if int64(len(result)) > limits.MaxReviewSidecarBytes {
 		return nil, ErrTooLarge
 	}
@@ -269,188 +301,157 @@ func (document *Document) Bytes() ([]byte, error) {
 	return result, nil
 }
 
-func validateThreads(node *value) ([]Thread, error) {
-	threadIDs := make(map[string]struct{}, len(node.items))
-	messageIDs := make(map[string]struct{})
-	threads := make([]Thread, 0, len(node.items))
-	for index, threadNode := range node.items {
-		thread, err := decodeThread(threadNode)
+func preflightJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := preflightValue(decoder); err != nil {
+		return err
+	}
+	return ensureDecoderEOF(decoder)
+}
+
+func preflightValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		seen := map[string]struct{}{}
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return errors.New("object key is not a string")
+			}
+			if _, exists := seen[key]; exists {
+				return fmt.Errorf("duplicate object member %q", key)
+			}
+			seen[key] = struct{}{}
+			for _, owned := range ownedJSONFieldNames {
+				if strings.EqualFold(key, owned) && key != owned {
+					return fmt.Errorf("JSON field %q must use exact spelling %q", key, owned)
+				}
+			}
+			if err := preflightValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim('}') {
+			return errors.New("unterminated JSON object")
+		}
+	case '[':
+		for decoder.More() {
+			if err := preflightValue(decoder); err != nil {
+				return err
+			}
+		}
+		end, err := decoder.Token()
+		if err != nil || end != json.Delim(']') {
+			return errors.New("unterminated JSON array")
+		}
+	default:
+		return fmt.Errorf("unexpected JSON delimiter %q", delimiter)
+	}
+	return nil
+}
+
+func ensureDecoderEOF(decoder *json.Decoder) error {
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return errors.New("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func decodedThreads(rawThreads []rawThread) ([]Thread, error) {
+	threads := make([]Thread, 0, len(rawThreads))
+	for index, rawThread := range rawThreads {
+		anchor, err := decodedAnchor(rawThread.Anchor)
 		if err != nil {
 			return nil, fmt.Errorf("thread %d: %w", index, err)
 		}
-		if _, exists := threadIDs[thread.ID]; exists {
-			return nil, fmt.Errorf("%w: duplicate thread ID %q", ErrInvalid, thread.ID)
-		}
-		threadIDs[thread.ID] = struct{}{}
-		for _, message := range thread.Messages {
-			if _, exists := messageIDs[message.ID]; exists {
-				return nil, fmt.Errorf("%w: duplicate message ID %q", ErrInvalid, message.ID)
+		messages := make([]Message, 0, len(rawThread.Messages))
+		for messageIndex, rawMessage := range rawThread.Messages {
+			message, err := decodedMessage(rawMessage)
+			if err != nil {
+				return nil, fmt.Errorf("thread %d message %d: %w", index, messageIndex, err)
 			}
-			messageIDs[message.ID] = struct{}{}
+			messages = append(messages, message)
 		}
-		threads = append(threads, thread)
+		threads = append(threads, Thread{ID: rawThread.ID, Anchor: anchor, Status: rawThread.Status, Messages: messages})
 	}
 	return threads, nil
 }
 
-func decodeThread(node *value) (Thread, error) {
-	if node.kind != objectValue {
-		return Thread{}, fmt.Errorf("%w: thread must be an object", ErrInvalid)
-	}
-	id, err := requiredNonEmptyString(node, "id")
-	if err != nil {
-		return Thread{}, err
-	}
-	anchorNode, ok := node.get("anchor")
-	if !ok {
-		return Thread{}, fmt.Errorf("%w: anchor is required", ErrInvalid)
-	}
-	anchor, err := decodeAnchor(anchorNode)
-	if err != nil {
-		return Thread{}, err
-	}
-	statusText, err := requiredNonEmptyString(node, "status")
-	if err != nil {
-		return Thread{}, err
-	}
-	status := ThreadStatus(statusText)
-	if !validStatus(status) {
-		return Thread{}, fmt.Errorf("%w: invalid thread status %q", ErrInvalid, status)
-	}
-	messagesNode, ok := node.get("messages")
-	if !ok || messagesNode.kind != arrayValue || len(messagesNode.items) == 0 {
-		return Thread{}, fmt.Errorf("%w: messages must be a non-empty array", ErrInvalid)
-	}
-	messages := make([]Message, 0, len(messagesNode.items))
-	for index, messageNode := range messagesNode.items {
-		message, messageErr := decodeMessage(messageNode)
-		if messageErr != nil {
-			return Thread{}, fmt.Errorf("message %d: %w", index, messageErr)
-		}
-		messages = append(messages, message)
-	}
-	return Thread{ID: id, Anchor: anchor, Status: status, Messages: messages}, nil
-}
-
-func decodeAnchor(node *value) (Anchor, error) {
-	if node.kind != objectValue {
-		return Anchor{}, fmt.Errorf("%w: anchor must be an object", ErrInvalid)
-	}
-	typeText, err := requiredNonEmptyString(node, "type")
-	if err != nil {
-		return Anchor{}, err
-	}
-	switch AnchorType(typeText) {
+func decodedAnchor(raw rawAnchor) (Anchor, error) {
+	switch raw.Type {
 	case AnchorDocument:
+		if raw.Range != nil || raw.Source != nil || raw.Text != nil {
+			return Anchor{}, errors.New("document anchor may contain only type")
+		}
 		return Anchor{Type: AnchorDocument}, nil
 	case AnchorText:
-		rangeNode, ok := node.get("range")
-		if !ok || rangeNode.kind != objectValue {
-			return Anchor{}, fmt.Errorf("%w: text anchor range must be an object", ErrInvalid)
+		if raw.Range == nil || raw.Source == nil || raw.Text == nil {
+			return Anchor{}, errors.New("text anchor requires range, source, and text")
 		}
-		start, err := requiredUint(rangeNode, "start")
-		if err != nil {
-			return Anchor{}, err
-		}
-		end, err := requiredUint(rangeNode, "end")
-		if err != nil {
-			return Anchor{}, err
-		}
-		if start > end {
-			return Anchor{}, fmt.Errorf("%w: text anchor range is reversed", ErrInvalid)
-		}
-		source, err := requiredNonEmptyString(node, "source")
-		if err != nil {
-			return Anchor{}, err
-		}
-		if end-start != uint64(len(source)) {
-			return Anchor{}, fmt.Errorf("%w: text anchor range does not match source bytes", ErrInvalid)
-		}
-		if int64(len(source)) > limits.MaxTextAnchorSourceBytes {
-			return Anchor{}, fmt.Errorf("%w: text anchor source exceeds content limit", ErrInvalid)
-		}
-		text, err := requiredString(node, "text")
-		if err != nil {
-			return Anchor{}, err
-		}
-		return Anchor{
-			Type:   AnchorText,
-			Range:  &ByteRange{Start: start, End: end},
-			Source: source,
-			Text:   text,
-		}, nil
+		return Anchor{Type: AnchorText, Range: raw.Range, Source: *raw.Source, Text: *raw.Text}, nil
 	default:
-		return Anchor{}, fmt.Errorf("%w: invalid anchor type %q", ErrInvalid, typeText)
+		return Anchor{}, fmt.Errorf("invalid anchor type %q", raw.Type)
 	}
 }
 
-func decodeMessage(node *value) (Message, error) {
-	if node.kind != objectValue {
-		return Message{}, fmt.Errorf("%w: message must be an object", ErrInvalid)
+func decodedMessage(raw rawMessage) (Message, error) {
+	if raw.Body == nil {
+		return Message{}, errors.New("body must be a string")
 	}
-	id, err := requiredNonEmptyString(node, "id")
-	if err != nil {
-		return Message{}, err
+	message := Message{ID: raw.ID, Author: raw.Author, Body: *raw.Body, CreatedAt: raw.CreatedAt}
+	if len(raw.EditedAt) == 0 {
+		return message, nil
 	}
-	authorNode, ok := node.get("author")
-	if !ok || authorNode.kind != objectValue {
-		return Message{}, fmt.Errorf("%w: author must be an object", ErrInvalid)
+	if bytes.Equal(bytes.TrimSpace(raw.EditedAt), []byte("null")) {
+		return Message{}, errors.New("editedAt must be a string")
 	}
-	authorType, err := requiredNonEmptyString(authorNode, "type")
-	if err != nil {
-		return Message{}, err
+	var editedAt string
+	if err := json.Unmarshal(raw.EditedAt, &editedAt); err != nil {
+		return Message{}, errors.New("editedAt must be a string")
 	}
-	if authorType != "human" && authorType != "agent" {
-		return Message{}, fmt.Errorf("%w: invalid author type %q", ErrInvalid, authorType)
-	}
-	authorName, err := requiredNonEmptyString(authorNode, "name")
-	if err != nil {
-		return Message{}, err
-	}
-	body, err := requiredString(node, "body")
-	if err != nil {
-		return Message{}, err
-	}
-	if int64(len(body)) > limits.MaxPersistedMessageBodyBytes {
-		return Message{}, fmt.Errorf("%w: message body exceeds content limit", ErrInvalid)
-	}
-	createdAt, err := requiredString(node, "createdAt")
-	if err != nil {
-		return Message{}, err
-	}
-	if err := validateUTCTimestamp(createdAt); err != nil {
-		return Message{}, fmt.Errorf("%w: createdAt %v", ErrInvalid, err)
-	}
-	var editedAt *string
-	if editedNode, exists := node.get("editedAt"); exists {
-		edited, editedErr := decodeString(editedNode, "editedAt")
-		if editedErr != nil {
-			return Message{}, editedErr
+	message.EditedAt = &editedAt
+	return message, nil
+}
+
+func validateThreads(threads []Thread) error {
+	threadIDs := make(map[string]struct{}, len(threads))
+	messageIDs := make(map[string]struct{})
+	for index, thread := range threads {
+		if err := validateThread(thread); err != nil {
+			return fmt.Errorf("thread %d: %w", index, err)
 		}
-		if timestampErr := validateUTCTimestamp(edited); timestampErr != nil {
-			return Message{}, fmt.Errorf("%w: editedAt %v", ErrInvalid, timestampErr)
+		if _, exists := threadIDs[thread.ID]; exists {
+			return fmt.Errorf("duplicate thread ID %q", thread.ID)
 		}
-		editedAt = &edited
+		threadIDs[thread.ID] = struct{}{}
+		for _, message := range thread.Messages {
+			if _, exists := messageIDs[message.ID]; exists {
+				return fmt.Errorf("duplicate message ID %q", message.ID)
+			}
+			messageIDs[message.ID] = struct{}{}
+		}
 	}
-	return Message{
-		ID:        id,
-		Author:    Author{Type: authorType, Name: authorName},
-		Body:      body,
-		CreatedAt: createdAt,
-		EditedAt:  editedAt,
-	}, nil
+	return nil
 }
 
 func validateThreadModel(thread Thread) error {
-	raw, err := json.Marshal(thread)
-	if err != nil {
-		return fmt.Errorf("%w: encode thread: %v", ErrInvalidOperation, err)
-	}
-	node, err := parseJSON(raw)
-	if err != nil {
-		return fmt.Errorf("%w: parse thread: %v", ErrInvalidOperation, err)
-	}
-	if _, err := decodeThread(node); err != nil {
+	if err := validateThread(thread); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidOperation, err)
 	}
 	messageIDs := make(map[string]struct{}, len(thread.Messages))
@@ -463,57 +464,74 @@ func validateThreadModel(thread Thread) error {
 	return nil
 }
 
-func exactUint(node *value, name string) (uint64, error) {
-	if node.kind != numberValue {
-		return 0, fmt.Errorf("%w: %s must be an integer", ErrInvalid, name)
+func validateThread(thread Thread) error {
+	if thread.ID == "" || !utf8.ValidString(thread.ID) {
+		return errors.New("thread ID must be non-empty UTF-8")
 	}
-	number := json.Number(string(node.raw))
-	result, err := strconv.ParseUint(number.String(), 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %s must be a non-negative integer", ErrInvalid, name)
+	if err := validateAnchor(thread.Anchor); err != nil {
+		return err
 	}
-	return result, nil
+	if !validStatus(thread.Status) {
+		return fmt.Errorf("invalid thread status %q", thread.Status)
+	}
+	if len(thread.Messages) == 0 {
+		return errors.New("messages must be a non-empty array")
+	}
+	for index, message := range thread.Messages {
+		if err := validateMessage(message); err != nil {
+			return fmt.Errorf("message %d: %w", index, err)
+		}
+	}
+	return nil
 }
 
-func requiredUint(object *value, name string) (uint64, error) {
-	field, ok := object.get(name)
-	if !ok {
-		return 0, fmt.Errorf("%w: %s is required", ErrInvalid, name)
+func validateAnchor(anchor Anchor) error {
+	switch anchor.Type {
+	case AnchorDocument:
+		if anchor.Range != nil || anchor.Source != "" || anchor.Text != "" {
+			return errors.New("document anchor may contain only type")
+		}
+	case AnchorText:
+		if anchor.Range == nil || anchor.Source == "" || !utf8.ValidString(anchor.Source) || !utf8.ValidString(anchor.Text) {
+			return errors.New("text anchor requires valid range, source, and text")
+		}
+		if anchor.Range.Start > anchor.Range.End {
+			return errors.New("text anchor range is reversed")
+		}
+		if anchor.Range.End-anchor.Range.Start != uint64(len(anchor.Source)) {
+			return errors.New("text anchor range does not match source bytes")
+		}
+		if int64(len(anchor.Source)) > limits.MaxTextAnchorSourceBytes {
+			return errors.New("text anchor source exceeds content limit")
+		}
+	default:
+		return fmt.Errorf("invalid anchor type %q", anchor.Type)
 	}
-	return exactUint(field, name)
+	return nil
 }
 
-func requiredString(object *value, name string) (string, error) {
-	field, ok := object.get(name)
-	if !ok {
-		return "", fmt.Errorf("%w: %s is required", ErrInvalid, name)
+func validateMessage(message Message) error {
+	if message.ID == "" || !utf8.ValidString(message.ID) {
+		return errors.New("message ID must be non-empty UTF-8")
 	}
-	return decodeString(field, name)
-}
-
-func requiredNonEmptyString(object *value, name string) (string, error) {
-	result, err := requiredString(object, name)
-	if err != nil {
-		return "", err
+	if (message.Author.Type != "human" && message.Author.Type != "agent") || !utf8.ValidString(message.Author.Type) {
+		return fmt.Errorf("invalid author type %q", message.Author.Type)
 	}
-	if result == "" {
-		return "", fmt.Errorf("%w: %s must not be empty", ErrInvalid, name)
+	if message.Author.Name == "" || !utf8.ValidString(message.Author.Name) {
+		return errors.New("author name must be non-empty UTF-8")
 	}
-	return result, nil
-}
-
-func decodeString(node *value, name string) (string, error) {
-	if node.kind != stringValueKind {
-		return "", fmt.Errorf("%w: %s must be a string", ErrInvalid, name)
+	if !utf8.ValidString(message.Body) || int64(len(message.Body)) > limits.MaxPersistedMessageBodyBytes {
+		return errors.New("message body exceeds content limit")
 	}
-	var result string
-	if err := json.Unmarshal(node.raw, &result); err != nil {
-		return "", fmt.Errorf("%w: %s is invalid", ErrInvalid, name)
+	if err := validateUTCTimestamp(message.CreatedAt); err != nil {
+		return fmt.Errorf("createdAt %w", err)
 	}
-	if !utf8.ValidString(result) {
-		return "", fmt.Errorf("%w: %s must be UTF-8", ErrInvalid, name)
+	if message.EditedAt != nil {
+		if err := validateUTCTimestamp(*message.EditedAt); err != nil {
+			return fmt.Errorf("editedAt %w", err)
+		}
 	}
-	return result, nil
+	return nil
 }
 
 func validateUTCTimestamp(input string) error {
@@ -569,4 +587,8 @@ func cloneMessages(messages []Message) []Message {
 		}
 	}
 	return result
+}
+
+func cloneBytes(data []byte) []byte {
+	return append([]byte(nil), data...)
 }

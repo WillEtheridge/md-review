@@ -277,7 +277,8 @@ When you ask a coding agent to address feedback, the intended grammar is:
 3. Leave unclear or incomplete threads `open`.
 4. For each completed change, append an `agent` message explaining what changed, then set that
    thread to `handled`.
-5. Preserve anchors, unrelated threads, and unknown schema-version-1 values.
+5. Preserve anchors, unrelated threads, and all supported schema-version-1 values. Stop if the
+   sidecar contains an unknown field.
 6. Never have an agent set a thread to `resolved`.
 7. Review the result in mdReview and resolve it yourself when accepted.
 

@@ -10,10 +10,9 @@ description: Address mdReview feedback stored in adjacent *.md.review.json sidec
 1. Find relevant `*.md.review.json` files. Pair each sidecar with the adjacent Markdown path by
    removing only the trailing `.review.json`; for example, `guide.md.review.json` reviews
    `guide.md`.
-2. Read the sidecar without losing JSON number precision. Continue only when `schemaVersion` is
-   exactly `1` and the schema is valid. Stop without changing an ambiguous sidecar containing
-   duplicate thread IDs, duplicate message IDs anywhere in the sidecar, or duplicate JSON object
-   keys at any depth.
+2. Continue only when `schemaVersion` is exactly `1` and the sidecar matches the published schema.
+   Stop without changing a sidecar containing unknown fields, duplicate thread IDs, duplicate
+   message IDs anywhere in the sidecar, or duplicate JSON object keys at any depth.
 3. Process only threads whose `status` is `open`. Inspect the paired Markdown and the thread
    messages before deciding what change is requested.
 4. Treat every anchor as immutable review history. A text anchor's `range` is an exact half-open
@@ -30,9 +29,8 @@ description: Address mdReview feedback stored in adjacent *.md.review.json sidec
 7. Set that thread's `status` to `handled` only after both the Markdown change and agent reply
    succeed. Never set a thread to `resolved`.
 
-Preserve unrelated threads and every unknown schema-version-1 field, including nested values and
-the exact lexemes of arbitrary-precision numbers. Use lossless JSON editing; do not round-trip
-unknown numbers through floating point.
+Preserve unrelated threads and all supported schema-version-1 fields. Reject a sidecar with an
+unknown field instead of rewriting it.
 
 Immediately before replacing a sidecar, reread both the Markdown and sidecar. Stop and re-evaluate
 if either whole-file revision changed; do not merge against the latest sidecar or compare only a

@@ -15,7 +15,7 @@
       }
     }
   },
-  "additionalProperties": true,
+  "additionalProperties": false,
   "$defs": {
     "thread": {
       "type": "object",
@@ -46,7 +46,7 @@
           }
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "documentAnchor": {
       "type": "object",
@@ -56,7 +56,7 @@
           "const": "document"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "textAnchor": {
       "type": "object",
@@ -76,7 +76,7 @@
           "type": "string"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "range": {
       "type": "object",
@@ -91,7 +91,7 @@
           "minimum": 0
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "message": {
       "type": "object",
@@ -116,7 +116,7 @@
           "format": "date-time"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     },
     "author": {
       "type": "object",
@@ -130,7 +130,7 @@
           "minLength": 1
         }
       },
-      "additionalProperties": true
+      "additionalProperties": false
     }
   }
 }

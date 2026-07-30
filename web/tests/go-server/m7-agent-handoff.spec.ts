@@ -102,10 +102,6 @@ test("m7 compiled browser loads the accepted agent result and records human reso
     expect(await readFile(destinationDocument, "utf8")).toBe(acceptedMarkdown);
     const persistedText = await readFile(destinationSidecar, "utf8");
     const persisted = JSON.parse(persistedText) as {
-      fixtureObject: {
-        enabled: boolean;
-        note: string;
-      };
       schemaVersion: number;
       threads: PersistedThread[];
     };
@@ -123,13 +119,6 @@ test("m7 compiled browser loads the accepted agent result and records human reso
     });
     expect(date?.status).toBe("open");
     expect(titleHistory?.status).toBe("resolved");
-    expect(persisted.fixtureObject).toEqual({
-      enabled: true,
-      note: "Fresh-agent preservation sentinel"
-    });
-    expect(persistedText).toContain("900719925474099312345678901234567890");
-    expect(persistedText).toContain("900719925474099312345678901234567891");
-    expect(persistedText).toContain('"fixtureExtension": "preserve exactly"');
     expect(acceptedSidecar).toContain('"status": "handled"');
   } finally {
     await rm(destinationDocument, { force: true });
