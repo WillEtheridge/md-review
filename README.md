@@ -19,7 +19,7 @@ threads as handled.
 mdReview supports Linux on `amd64` and macOS on Apple silicon (`arm64`). It does not support Windows
 or Intel Mac computers.
 
-## Download and run
+## Install
 
 Open the [GitHub Releases page](https://github.com/WillEtheridge/md-review/releases). Download the
 archive for your operating system.
@@ -35,7 +35,11 @@ Run these commands in the directory that contains the archive:
 
 ```bash
 tar -xzf mdreview-v0.2.0-preview.1-linux-amd64.tar.gz
-./mdreview-v0.2.0-preview.1-linux-amd64/mdreview /path/to/project
+mkdir -p "$HOME/.local/bin"
+cp mdreview-v0.2.0-preview.1-linux-amd64/mdreview "$HOME/.local/bin/mdreview"
+printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.bashrc"
+source "$HOME/.bashrc"
+mdreview /path/to/project
 ```
 
 ### Apple silicon macOS
@@ -50,7 +54,11 @@ Continue if the output is `arm64`. Run these commands in the directory that cont
 
 ```bash
 tar -xzf mdreview-v0.2.0-preview.1-darwin-arm64.tar.gz
-./mdreview-v0.2.0-preview.1-darwin-arm64/mdreview /path/to/project
+mkdir -p "$HOME/.local/bin"
+cp mdreview-v0.2.0-preview.1-darwin-arm64/mdreview "$HOME/.local/bin/mdreview"
+printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >>"$HOME/.zprofile"
+source "$HOME/.zprofile"
+mdreview /path/to/project
 ```
 
 The macOS archive is not signed or notarised. If macOS blocks the first start:
@@ -59,18 +67,17 @@ The macOS archive is not signed or notarised. If macOS blocks the first start:
 2. Select **Privacy & Security**.
 3. Find the message about `mdreview`.
 4. Select **Open Anyway**.
-5. Start the binary again.
+5. Start `mdreview` again.
 
-To run `mdreview` from any directory, copy the extracted binary to a directory already on your
-`PATH`.
+The Linux commands use Bash and the macOS commands use Zsh. If you use another shell, add
+`$HOME/.local/bin` to that shell's startup file instead.
 
 ### Optional Agent Skill
 
 Install the Agent Skill if you want an agent to find and address review comments. mdReview works
 without the skill.
 
-Run the extracted binary with `setup` in place of the project path. If `mdreview` is already on
-your `PATH`, run:
+After installation, run:
 
 ```bash
 mdreview setup
